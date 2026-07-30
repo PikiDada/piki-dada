@@ -4,10 +4,14 @@ import Stripe from 'stripe';
 
 @Injectable()
 export class StripeService {
-  private stripe: InstanceType<typeof Stripe>;
+  private stripe: InstanceType<typeof Stripe> | null;
 
   constructor(private config: ConfigService) {
-    this.stripe = new Stripe(this.config.getOrThrow<string>('STRIPE_SECRET_KEY'));
+    const key = this.config.get<string>('STRIPE_SECRET_KEY');
+    this.stripe = key ? new Stripe(key) : null;
+    if (!key) {
+      console.warn('[StripeService] STRIPE_SECRET_KEY not configured — payments are disabled');
+    }
   }
 
   async createCheckoutSession(params: {
@@ -17,6 +21,9 @@ export class StripeService {
     successUrl: string;
     cancelUrl: string;
   }) {
+    if (!this.stripe) {
+      throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY.');
+    }
     const session = await this.stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -38,6 +45,9 @@ export class StripeService {
   }
 
   constructWebhookEvent(rawBody: Buffer, signature: string) {
+    if (!this.stripe) {
+      throw new Error('Stripe is not configured.');
+    }
     return this.stripe.webhooks.constructEvent(
       rawBody,
       signature,
