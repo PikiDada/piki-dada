@@ -1,72 +1,8 @@
 services:
   - type: web
     name: piki-dada-api
-    runtime: docker
-    dockerfilePath: ./apps/api/Dockerfile
-    dockerContext: .
+    env: node
     plan: free
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: JWT_ACCESS_SECRET
-        generateValue: true
-      - key: JWT_REFRESH_SECRET
-        generateValue: true
-      - key: JWT_ACCESS_EXPIRES_IN
-        value: "900"
-      - key: JWT_REFRESH_EXPIRES_IN
-        value: "604800"
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: GOOGLE_CALLBACK_URL
-        sync: false
-      - key: PORT
-        value: "4001"
-      - key: CORS_ORIGIN
-        sync: false
-      - key: CLOUDINARY_CLOUD_NAME
-        sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: FLUTTERWAVE_SECRET_KEY
-        sync: false
-      - key: FLUTTERWAVE_SECRET_HASH
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM_EMAIL
-        sync: false
-      - key: FIREBASE_PROJECT_ID
-        sync: false
-      - key: FIREBASE_CLIENT_EMAIL
-        sync: false
-      - key: FIREBASE_PRIVATE_KEY
-        sync: false
-      - key: VAPID_PUBLIC_KEY
-        sync: false
-      - key: VAPID_PRIVATE_KEY
-        sync: false
-      - key: VAPID_SUBJECT
-        sync: false
-      - key: SENTRY_DSN
-        sync: false
-      - key: FIELD_ENCRYPTION_KEY
-        sync: false
-      - key: SEED_ADMIN_EMAIL
-        sync: false
-      - key: SEED_ADMIN_PASSWORD
-        sync: false
+    buildCommand: npm run build
+    startCommand: npm run start:api
+    preBuildCommand: npx prisma migrate deploy
