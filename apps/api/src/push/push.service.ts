@@ -7,21 +7,32 @@ import { PushSubscriptionDto } from './dto/push-subscription.dto';
 @Injectable()
 export class PushService {
   private readonly logger = new Logger(PushService.name);
-  private publicKey: string;
+  private publicKey: string | null;
+  private enabled: boolean;
 
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
   ) {
-    this.publicKey = this.config.getOrThrow<string>('VAPID_PUBLIC_KEY');
-    webpush.setVapidDetails(
-      this.config.getOrThrow<string>('VAPID_SUBJECT'),
-      this.publicKey,
-      this.config.getOrThrow<string>('VAPID_PRIVATE_KEY'),
-    );
+    const publicKey = this.config.get<string>('VAPID_PUBLIC_KEY');
+    const subject = this.config.get<string>('VAPID_SUBJECT');
+    const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY');
+
+    if (publicKey && subject && privateKey) {
+      this.publicKey = publicKey;
+      this.enabled = true;
+      webpush.setVapidDetails(subject, publicKey, privateKey);
+    } else {
+      this.publicKey = null;
+      this.enabled = false;
+      this.logger.warn('VAPID keys not configured — push notifications are disabled');
+    }
   }
 
   getPublicKey() {
+    if (!this.enabled || !this.publicKey) {
+      return { publicKey: null };
+    }
     return { publicKey: this.publicKey };
   }
 
@@ -44,6 +55,11 @@ export class PushService {
   }
 
   async broadcast(title: string, body: string, url?: string) {
+    if (!this.enabled) {
+      this.logger.warn('[Push disabled] Broadcast would have been sent but VAPID not configured');
+      return { sentCount: 0, failedCount: 0 };
+    }
+
     const subscriptions = await this.prisma.pushSubscription.findMany();
     let sentCount = 0;
     let failedCount = 0;
