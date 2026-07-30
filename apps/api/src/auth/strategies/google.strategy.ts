@@ -5,14 +5,25 @@ import { Profile, Strategy, VerifyCallback } from 'passport-google-oauth20';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
+  private enabled: boolean;
+
   constructor(config: ConfigService) {
+    const clientID = config.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = config.get<string>('GOOGLE_CLIENT_SECRET');
+    const callbackURL = config.get<string>('GOOGLE_CALLBACK_URL');
+
     super({
-      clientID: config.getOrThrow<string>('GOOGLE_CLIENT_ID'),
-      clientSecret: config.getOrThrow<string>('GOOGLE_CLIENT_SECRET'),
-      callbackURL: config.getOrThrow<string>('GOOGLE_CALLBACK_URL'),
+      clientID: clientID || 'DISABLED',
+      clientSecret: clientSecret || 'DISABLED',
+      callbackURL: callbackURL || 'http://localhost:3000/auth/google/callback',
       scope: ['email', 'profile'],
       passReqToCallback: false as const,
     });
+
+    this.enabled = !!(clientID && clientSecret && callbackURL);
+    if (!this.enabled) {
+      console.warn('[GoogleStrategy] Google OAuth credentials not configured — Google login is disabled');
+    }
   }
 
   validate(accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) {
