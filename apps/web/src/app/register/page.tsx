@@ -24,7 +24,8 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { setSession, clearSession } = useAuthStore((s) => ({ setSession: s.setSession, clearSession: s.clearSession }));
+  const setSession = useAuthStore((s) => s.setSession);
+  const clearSession = useAuthStore((s) => s.clearSession);
   const [role, setRole] = useState<UserRole>("PASSENGER");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
