@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createTransport, type Transporter } from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 
 function escapeHtml(value: string) {
   return value
@@ -12,30 +12,31 @@ function escapeHtml(value: string) {
 
 @Injectable()
 export class EmailService {
-  private transporter: Transporter;
   private fromAddress: string;
   private webUrl: string;
+  private enabled: boolean;
 
   constructor(private config: ConfigService) {
-    const smtpPort = Number(this.config.get<string>('SMTP_PORT', '587'));
-    this.transporter = createTransport({
-      host: this.config.getOrThrow<string>('SMTP_HOST'),
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: {
-        user: this.config.getOrThrow<string>('SMTP_USER'),
-        pass: this.config.getOrThrow<string>('SMTP_PASSWORD'),
-      },
-    });
-    this.fromAddress = this.config.getOrThrow<string>('SMTP_FROM_EMAIL');
+    const apiKey = this.config.get<string>('SENDGRID_API_KEY');
+    if (apiKey) {
+      sgMail.setApiKey(apiKey);
+      this.enabled = true;
+    } else {
+      this.enabled = false;
+      console.warn('[EmailService] SENDGRID_API_KEY not configured — email is disabled');
+    }
+    this.fromAddress = this.config.get<string>('SMTP_FROM_EMAIL') || 'noreply@pikidada.com';
     this.webUrl = this.config.getOrThrow<string>('CORS_ORIGIN');
   }
 
   async send(to: string, subject: string, html: string) {
+    if (!this.enabled) {
+      console.warn('[EmailService] Email disabled (no API key). Would have sent:', subject, 'to', to);
+      return;
+    }
     try {
-      await this.transporter.sendMail({ from: this.fromAddress, to, subject, html });
+      await sgMail.send({ from: this.fromAddress, to, subject, html });
     } catch (err) {
-      // Email delivery failures shouldn't break the request flow (e.g. placeholder SMTP creds in dev)
       console.error('EmailService: failed to send', subject, 'to', to, err);
     }
   }
