@@ -14,7 +14,9 @@ export class UploadsService {
 
   async uploadBuffer(buffer: Buffer, folder: string, filename?: string): Promise<string> {
     const timestamp = Date.now();
-    const path = `${folder}/${filename || `file-${timestamp}`}`;
+    const randomSuffix = Math.random().toString(36).substring(2, 9);
+    const uniqueFilename = filename ? `${filename}-${timestamp}-${randomSuffix}` : `file-${timestamp}-${randomSuffix}`;
+    const path = `${folder}/${uniqueFilename}`;
 
     const { data, error } = await this.supabase.storage
       .from('driver-documents')
