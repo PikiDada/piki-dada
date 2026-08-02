@@ -1,28 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { v2 as cloudinary } from 'cloudinary';
+import { createClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class UploadsService {
+  private supabase;
+
   constructor(config: ConfigService) {
-    cloudinary.config({
-      cloud_name: config.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: config.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: config.get<string>('CLOUDINARY_API_SECRET'),
-    });
+    const url = config.getOrThrow<string>('SUPABASE_URL');
+    const key = config.getOrThrow<string>('SUPABASE_ANON_KEY');
+    this.supabase = createClient(url, key);
   }
 
-  uploadBuffer(buffer: Buffer, folder: string, mimeType?: string): Promise<string> {
-    const resourceType = mimeType === 'application/pdf' ? 'raw' : 'image';
-    return new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { folder, resource_type: resourceType, use_filename: true, unique_filename: true },
-        (error, result) => {
-          if (error || !result) return reject(error);
-          resolve(result.secure_url);
-        },
-      );
-      stream.end(buffer);
-    });
+  async uploadBuffer(buffer: Buffer, folder: string, filename?: string): Promise<string> {
+    const timestamp = Date.now();
+    const path = `${folder}/${filename || `file-${timestamp}`}`;
+
+    const { data, error } = await this.supabase.storage
+      .from('driver-documents')
+      .upload(path, buffer, { upsert: false });
+
+    if (error) throw new Error(`Upload failed: ${error.message}`);
+
+    const { data: publicUrl } = this.supabase.storage
+      .from('driver-documents')
+      .getPublicUrl(path);
+
+    return publicUrl.publicUrl;
   }
 }
