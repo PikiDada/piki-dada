@@ -8,7 +8,7 @@ export class UploadsService {
 
   constructor(config: ConfigService) {
     const url = config.getOrThrow<string>('SUPABASE_URL');
-    const key = config.getOrThrow<string>('SUPABASE_ANON_KEY');
+    const key = config.getOrThrow<string>('SUPABASE_SERVICE_ROLE_KEY');
     this.supabase = createClient(url, key);
   }
 
