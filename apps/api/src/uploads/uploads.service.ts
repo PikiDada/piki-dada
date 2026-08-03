@@ -12,7 +12,7 @@ export class UploadsService {
     this.supabase = createClient(url, key);
   }
 
-  async uploadBuffer(buffer: Buffer, folder: string, filename?: string): Promise<string> {
+  async uploadBuffer(buffer: Buffer, folder: string, filename?: string, mimeType?: string): Promise<string> {
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substring(2, 9);
     const uniqueFilename = filename ? `${filename}-${timestamp}-${randomSuffix}` : `file-${timestamp}-${randomSuffix}`;
@@ -20,7 +20,7 @@ export class UploadsService {
 
     const { data, error } = await this.supabase.storage
       .from('driver-documents')
-      .upload(path, buffer, { upsert: false });
+      .upload(path, buffer, { upsert: false, contentType: mimeType || 'application/octet-stream' });
 
     if (error) throw new Error(`Upload failed: ${error.message}`);
 

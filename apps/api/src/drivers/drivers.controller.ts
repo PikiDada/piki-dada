@@ -63,7 +63,7 @@ export class DriversController {
     )
     file: Express.Multer.File,
   ) {
-    const fileUrl = await this.uploadsService.uploadBuffer(file.buffer, 'driver-documents', file.mimetype);
+    const fileUrl = await this.uploadsService.uploadBuffer(file.buffer, 'driver-documents', file.originalname, file.mimetype);
     return this.driversService.addDocument(user.id, dto.type, fileUrl);
   }
 
