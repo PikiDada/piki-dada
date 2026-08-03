@@ -35,9 +35,11 @@ export class EmailService {
       return;
     }
     try {
+      console.log(`[EmailService] Sending email to ${to} with subject: ${subject}`);
       await sgMail.send({ from: this.fromAddress, to, subject, html });
+      console.log(`[EmailService] Email sent successfully to ${to}`);
     } catch (err) {
-      console.error('EmailService: failed to send', subject, 'to', to, err);
+      console.error('[EmailService] Failed to send email to', to, 'subject:', subject, 'error:', err);
     }
   }
 
