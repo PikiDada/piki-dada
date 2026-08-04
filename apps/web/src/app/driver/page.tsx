@@ -73,8 +73,9 @@ export default function DriverDashboardPage() {
         body: JSON.stringify({ isOnline: !profile.isOnline }),
       });
       setProfile({ ...profile, ...updated });
-    } catch {
+    } catch (err) {
       // approval gate or other error; reload to show banner
+      console.error("Failed to toggle online status:", err);
       loadProfile();
     } finally {
       setToggling(false);
