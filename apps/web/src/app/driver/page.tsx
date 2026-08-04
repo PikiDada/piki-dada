@@ -50,6 +50,23 @@ export default function DriverDashboardPage() {
     loadProfile();
   }, [loadProfile]);
 
+  // Debug: log all clicks on the page
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.textContent?.includes("online")) {
+        console.log("CLICK DETECTED on element:", {
+          tagName: target.tagName,
+          textContent: target.textContent,
+          classList: Array.from(target.classList),
+          id: target.id,
+        });
+      }
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, []);
+
   useEffect(() => {
     const socket = getSocket();
     const handleRequest = (data: IncomingRequest) => setIncoming(data);
@@ -181,19 +198,24 @@ export default function DriverDashboardPage() {
             className="mt-4 w-full"
             disabled={toggling}
             onClick={() => {
-              console.log("Button clicked. Approval status:", profile.approvalStatus);
-              if (profile.approvalStatus !== "APPROVED") {
-                const msg =
-                  profile.approvalStatus === "REJECTED"
-                    ? "Your application was rejected. Contact support to appeal."
-                    : "Your account is still pending admin approval. You will be able to go online once approved.";
-                console.log("Approval blocked:", msg);
-                setOnlineBlockMsg(msg);
-                return;
+              try {
+                console.log("🔴 BUTTON CLICKED");
+                console.log("Approval status:", profile.approvalStatus);
+                if (profile.approvalStatus !== "APPROVED") {
+                  const msg =
+                    profile.approvalStatus === "REJECTED"
+                      ? "Your application was rejected. Contact support to appeal."
+                      : "Your account is still pending admin approval. You will be able to go online once approved.";
+                  console.log("🔴 Approval blocked:", msg);
+                  setOnlineBlockMsg(msg);
+                  return;
+                }
+                console.log("🔴 Approval check passed. Calling toggleOnline()");
+                setOnlineBlockMsg(null);
+                toggleOnline();
+              } catch (err) {
+                console.error("🔴 ERROR in button onClick:", err);
               }
-              console.log("Approval check passed. Calling toggleOnline()");
-              setOnlineBlockMsg(null);
-              toggleOnline();
             }}
           >
             {profile.isOnline ? "Go offline" : "Go online"}
