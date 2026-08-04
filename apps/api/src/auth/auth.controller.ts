@@ -25,20 +25,19 @@ export class AuthController {
 
   // The refresh token only ever travels as an httpOnly cookie, never in a JSON response body —
   // that way it's unreadable to JS even if an XSS bug is ever introduced elsewhere in the app.
-  // Scoped to /auth so it isn't sent on every API request, only the ones that need it.
   private setRefreshCookie(res: Response, token: string) {
     const isProd = process.env.NODE_ENV === 'production';
     res.cookie(REFRESH_COOKIE_NAME, token, {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
-      path: '/auth',
+      path: '/',
       maxAge: Number(this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN')) * 1000,
     });
   }
 
   private clearRefreshCookie(res: Response) {
-    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
+    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/' });
   }
 
   private sessionMeta(req: Request) {
