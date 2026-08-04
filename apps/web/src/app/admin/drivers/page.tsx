@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch, apiUrl } from "@/lib/api";
@@ -37,6 +38,56 @@ async function downloadDocument(docId: string, docType: DocumentType, driverName
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+async function downloadAllDocuments(driverName: string, documents: Array<{ id: string; type: DocumentType }>) {
+  if (documents.length === 0) {
+    alert("No documents to download.");
+    return;
+  }
+
+  const zip = new JSZip();
+  const token = useAuthStore.getState().accessToken;
+  let successCount = 0;
+
+  for (const doc of documents) {
+    try {
+      const res = await fetch(apiUrl(`/admin/documents/${doc.id}`), {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) continue;
+
+      const blob = await res.blob();
+      const mimeToExt: Record<string, string> = {
+        "application/pdf": "pdf",
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+      };
+      const ext = mimeToExt[blob.type] ?? "jpg";
+      const filename = `${driverName} ${DOCUMENT_LABELS[doc.type]}.${ext}`;
+      zip.file(filename, blob);
+      successCount++;
+    } catch (err) {
+      console.error(`Failed to download ${doc.type}:`, err);
+    }
+  }
+
+  if (successCount === 0) {
+    alert("Could not download any documents. Please try again.");
+    return;
+  }
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${driverName}_documents.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -129,6 +180,11 @@ export default function AdminDriversPage() {
                 )}
               </div>
               <div className="flex gap-2">
+                {d.documents.length > 0 && (
+                  <Button size="sm" variant="outline" onClick={() => downloadAllDocuments(d.user.name, d.documents)}>
+                    Download All
+                  </Button>
+                )}
                 <Button size="sm" onClick={() => approve(d.id)} disabled={!d.vehicle}>
                   Approve
                 </Button>
