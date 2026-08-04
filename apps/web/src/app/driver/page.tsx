@@ -27,19 +27,26 @@ export default function DriverDashboardPage() {
   const [onlineBlockMsg, setOnlineBlockMsg] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
+  console.log("DriverDashboardPage rendered. Current profile state:", profile);
+
   const loadProfile = useCallback(() => {
     console.log("Loading driver profile...");
-    apiFetch<DriverProfile>("/drivers/me").then((data) => {
-      console.log("Profile loaded:", {
-        name: data.user.name,
-        approvalStatus: data.approvalStatus,
-        isOnline: data.isOnline,
+    apiFetch<DriverProfile>("/drivers/me")
+      .then((data) => {
+        console.log("Profile loaded:", {
+          name: data.user.name,
+          approvalStatus: data.approvalStatus,
+          isOnline: data.isOnline,
+        });
+        setProfile(data);
+      })
+      .catch((err) => {
+        console.error("Failed to load profile:", err);
       });
-      setProfile(data);
-    });
   }, []);
 
   useEffect(() => {
+    console.log("useEffect: mounting, calling loadProfile");
     loadProfile();
   }, [loadProfile]);
 
