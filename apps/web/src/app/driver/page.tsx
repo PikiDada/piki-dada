@@ -28,7 +28,15 @@ export default function DriverDashboardPage() {
   const watchIdRef = useRef<number | null>(null);
 
   const loadProfile = useCallback(() => {
-    apiFetch<DriverProfile>("/drivers/me").then(setProfile);
+    console.log("Loading driver profile...");
+    apiFetch<DriverProfile>("/drivers/me").then((data) => {
+      console.log("Profile loaded:", {
+        name: data.user.name,
+        approvalStatus: data.approvalStatus,
+        isOnline: data.isOnline,
+      });
+      setProfile(data);
+    });
   }, []);
 
   useEffect(() => {
@@ -65,17 +73,30 @@ export default function DriverDashboardPage() {
   }, [profile?.isOnline]);
 
   async function toggleOnline() {
-    if (!profile) return;
+    if (!profile) {
+      console.error("No profile loaded");
+      return;
+    }
+    console.log("Toggle online clicked. Current profile:", {
+      approvalStatus: profile.approvalStatus,
+      isOnline: profile.isOnline,
+    });
     setToggling(true);
     try {
+      console.log("Calling /drivers/me/availability with isOnline:", !profile.isOnline);
       const updated = await apiFetch<DriverProfile>("/drivers/me/availability", {
         method: "PATCH",
         body: JSON.stringify({ isOnline: !profile.isOnline }),
       });
+      console.log("Success! Updated profile:", updated);
       setProfile({ ...profile, ...updated });
     } catch (err) {
       // approval gate or other error; reload to show banner
       console.error("Failed to toggle online status:", err);
+      console.error("Error details:", {
+        message: err instanceof Error ? err.message : err,
+        stack: err instanceof Error ? err.stack : null,
+      });
       loadProfile();
     } finally {
       setToggling(false);
@@ -153,14 +174,17 @@ export default function DriverDashboardPage() {
             className="mt-4 w-full"
             disabled={toggling}
             onClick={() => {
+              console.log("Button clicked. Approval status:", profile.approvalStatus);
               if (profile.approvalStatus !== "APPROVED") {
-                setOnlineBlockMsg(
+                const msg =
                   profile.approvalStatus === "REJECTED"
                     ? "Your application was rejected. Contact support to appeal."
-                    : "Your account is still pending admin approval. You will be able to go online once approved.",
-                );
+                    : "Your account is still pending admin approval. You will be able to go online once approved.";
+                console.log("Approval blocked:", msg);
+                setOnlineBlockMsg(msg);
                 return;
               }
+              console.log("Approval check passed. Calling toggleOnline()");
               setOnlineBlockMsg(null);
               toggleOnline();
             }}
