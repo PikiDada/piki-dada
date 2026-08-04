@@ -14,7 +14,7 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
   INSURANCE: "Insurance",
 };
 
-async function downloadDocument(docId: string, docType: DocumentType) {
+async function downloadDocument(docId: string, docType: DocumentType, driverName: string) {
   const token = useAuthStore.getState().accessToken;
   const res = await fetch(apiUrl(`/admin/documents/${docId}`), {
     credentials: "include",
@@ -32,7 +32,7 @@ async function downloadDocument(docId: string, docType: DocumentType) {
     "image/webp": "webp",
   };
   const ext = mimeToExt[blob.type] ?? "jpg";
-  const filename = `${DOCUMENT_LABELS[docType].replace(/\s+/g, "_")}.${ext}`;
+  const filename = `${driverName} ${DOCUMENT_LABELS[docType]}.${ext}`;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -106,7 +106,7 @@ export default function AdminDriversPage() {
                         <button
                           key={doc.id}
                           type="button"
-                          onClick={() => downloadDocument(doc.id, doc.type)}
+                          onClick={() => downloadDocument(doc.id, doc.type, d.user.name)}
                           className="flex flex-col items-center gap-1 text-xs text-neutral-500 hover:text-black"
                         >
                           {isImage ? (
