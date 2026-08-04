@@ -100,28 +100,31 @@ export default function AdminDriversPage() {
                   <p className="text-xs text-neutral-400">No documents uploaded</p>
                 ) : (
                   <div className="mt-2 flex flex-wrap gap-3">
-                    {d.documents.map((doc) => (
-                      <button
-                        key={doc.id}
-                        type="button"
-                        onClick={() => downloadDocument(doc.id, doc.type)}
-                        className="flex flex-col items-center gap-1 text-xs text-neutral-500 hover:text-black"
-                      >
-                        {/\.(jpe?g|png|webp)$/i.test(doc.fileUrl) ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={doc.fileUrl}
-                            alt={DOCUMENT_LABELS[doc.type]}
-                            className="h-16 w-24 rounded-md border border-neutral-200 object-cover"
-                          />
-                        ) : (
-                          <span className="flex h-16 w-24 items-center justify-center rounded-md border border-neutral-200 text-[11px] uppercase">
-                            PDF
-                          </span>
-                        )}
-                        <span className="underline">{DOCUMENT_LABELS[doc.type]}</span>
-                      </button>
-                    ))}
+                    {d.documents.map((doc) => {
+                      const isImage = /\.(jpe?g|png|webp)/i.test(doc.fileUrl);
+                      return (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          onClick={() => downloadDocument(doc.id, doc.type)}
+                          className="flex flex-col items-center gap-1 text-xs text-neutral-500 hover:text-black"
+                        >
+                          {isImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={doc.fileUrl}
+                              alt={DOCUMENT_LABELS[doc.type]}
+                              className="h-16 w-24 rounded-md border border-neutral-200 object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-16 w-24 items-center justify-center rounded-md border border-neutral-200 text-[11px] uppercase">
+                              PDF
+                            </span>
+                          )}
+                          <span className="underline">{DOCUMENT_LABELS[doc.type]}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
