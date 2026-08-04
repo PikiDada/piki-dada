@@ -13,7 +13,7 @@ import type { DocumentType } from "@/lib/types";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { Upload, CheckCircle2 } from "lucide-react";
+import { Upload, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
   { value: "NATIONAL_ID", label: "National ID" },
@@ -21,6 +21,8 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
   { value: "VEHICLE_REGISTRATION", label: "Motorcycle Registration" },
   { value: "INSURANCE", label: "Insurance" },
 ];
+
+type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -46,10 +48,49 @@ export default function RegisterPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [registrationStep, setRegistrationStep] = useState<"form" | "account" | "vehicle" | "documents">("form");
+  const [uploadProgress, setUploadProgress] = useState<Record<DocumentType, { status: UploadStatus; error?: string; progress: number }>>({
+    NATIONAL_ID: { status: "idle", progress: 0 },
+    DRIVING_PERMIT: { status: "idle", progress: 0 },
+    VEHICLE_REGISTRATION: { status: "idle", progress: 0 },
+    INSURANCE: { status: "idle", progress: 0 },
+  });
+
+  async function uploadDocument(docType: DocumentType, file: File) {
+    setUploadProgress((prev) => ({
+      ...prev,
+      [docType]: { status: "uploading", progress: 0 },
+    }));
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", docType);
+
+      await apiFetch("/drivers/me/documents", {
+        method: "POST",
+        body: formData,
+      });
+
+      setUploadProgress((prev) => ({
+        ...prev,
+        [docType]: { status: "success", progress: 100 },
+      }));
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Upload failed";
+      setUploadProgress((prev) => ({
+        ...prev,
+        [docType]: { status: "error", error: errorMsg, progress: 0 },
+      }));
+      throw err;
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setRegistrationStep("form");
+
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -58,8 +99,11 @@ export default function RegisterPage() {
       setError("All documents are required");
       return;
     }
+
     setLoading(true);
     try {
+      // Step 1: Create account
+      setRegistrationStep("account");
       const data = await apiFetch<{
         accessToken: string;
         user: { id: string; email: string; role: UserRole };
@@ -70,30 +114,98 @@ export default function RegisterPage() {
       setSession(data.accessToken, data.user);
 
       if (role === "DRIVER") {
+        // Step 2: Add vehicle
+        setRegistrationStep("vehicle");
         await apiFetch("/drivers/me/vehicle", {
           method: "POST",
           body: JSON.stringify({ make, model, color, plateNumber, rideType: "BODA" }),
         });
+
+        // Step 3: Upload documents
+        setRegistrationStep("documents");
+        const uploadErrors: Partial<Record<DocumentType, string>> = {};
+
         for (const doc of DOCUMENT_TYPES) {
           const file = documents[doc.value];
           if (!file) continue;
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("type", doc.value);
-          await apiFetch("/drivers/me/documents", { method: "POST", body: formData });
+
+          try {
+            await uploadDocument(doc.value, file);
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : "Upload failed";
+            uploadErrors[doc.value] = errorMsg;
+          }
+        }
+
+        // If any uploads failed, stop and show error
+        if (Object.keys(uploadErrors).length > 0) {
+          const failedDocs = Object.keys(uploadErrors)
+            .map((key) => {
+              const doc = DOCUMENT_TYPES.find((d) => d.value === key as DocumentType);
+              return doc?.label || key;
+            })
+            .join(", ");
+          setError(`Registration incomplete. Failed to upload: ${failedDocs}. Please try uploading again.`);
+          setLoading(false);
+          return;
         }
       }
 
-      // Registration done. Clear the session so the user must verify their
+      // All steps complete. Clear the session so the user must verify their
       // email and log in properly — prevents bypassing verification via the
       // token issued during registration.
       clearSession();
       router.push(`/verify-email/sent?email=${encodeURIComponent(email)}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      if (registrationStep === "account") {
+        setError("Failed to create account. " + (err instanceof Error ? err.message : "Please try again."));
+      } else if (registrationStep === "vehicle") {
+        setError(
+          "Account created, but motorcycle details failed to save. Please contact support with your email " + email,
+        );
+      }
+      setRegistrationStep("form");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function retryFailedUploads() {
+    setError(null);
+    setLoading(true);
+    const uploadErrors: Partial<Record<DocumentType, string>> = {};
+
+    for (const doc of DOCUMENT_TYPES) {
+      const status = uploadProgress[doc.value];
+      if (status.status !== "error") continue;
+
+      const file = documents[doc.value];
+      if (!file) continue;
+
+      try {
+        await uploadDocument(doc.value, file);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : "Upload failed";
+        uploadErrors[doc.value] = errorMsg;
+      }
+    }
+
+    if (Object.keys(uploadErrors).length > 0) {
+      const failedDocs = Object.keys(uploadErrors)
+        .map((key) => {
+          const doc = DOCUMENT_TYPES.find((d) => d.value === key as DocumentType);
+          return doc?.label || key;
+        })
+        .join(", ");
+      setError(`Failed to upload: ${failedDocs}. Please check file sizes (max 5MB) and formats (JPG, PNG, PDF).`);
+      setLoading(false);
+      return;
+    }
+
+    // All retries succeeded
+    clearSession();
+    router.push(`/verify-email/sent?email=${encodeURIComponent(email)}`);
+    setLoading(false);
   }
 
   return (
@@ -263,9 +375,99 @@ export default function RegisterPage() {
               </>
             )}
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {/* Progress indicator for driver registration */}
+            {role === "DRIVER" && loading && (
+              <div className="space-y-4 rounded-lg bg-blue-50 p-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    {registrationStep !== "account" && registrationStep !== "form" ? (
+                      <CheckCircle2 size={18} className="text-green-600" />
+                    ) : (
+                      <Loader2 size={18} className="animate-spin text-blue-600" />
+                    )}
+                    <span className="text-sm font-medium">Creating account</span>
+                  </div>
+
+                  {registrationStep !== "form" && (
+                    <div className="flex items-center gap-2">
+                      {registrationStep === "documents" ? (
+                        <CheckCircle2 size={18} className="text-green-600" />
+                      ) : (
+                        <Loader2 size={18} className="animate-spin text-blue-600" />
+                      )}
+                      <span className="text-sm font-medium">Setting up motorcycle</span>
+                    </div>
+                  )}
+
+                  {registrationStep === "documents" && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Uploading documents</p>
+                      {DOCUMENT_TYPES.map((doc) => {
+                        const progress = uploadProgress[doc.value];
+                        const isLoading = progress.status === "uploading";
+                        const isSuccess = progress.status === "success";
+                        const isError = progress.status === "error";
+
+                        return (
+                          <div key={doc.value} className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                {isSuccess ? (
+                                  <CheckCircle2 size={16} className="text-green-600" />
+                                ) : isError ? (
+                                  <AlertCircle size={16} className="text-red-600" />
+                                ) : isLoading ? (
+                                  <Loader2 size={16} className="animate-spin text-blue-600" />
+                                ) : (
+                                  <div className="h-4 w-4 rounded-full border border-neutral-300" />
+                                )}
+                                <span className="text-xs font-medium">{doc.label}</span>
+                              </div>
+                              <span className="text-xs text-neutral-600">
+                                {isSuccess ? "Complete" : isError ? "Failed" : isLoading ? "Uploading..." : "Waiting"}
+                              </span>
+                            </div>
+                            <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-200">
+                              <div
+                                className={cn(
+                                  "h-full transition-all duration-300",
+                                  isSuccess ? "w-full bg-green-600" : isError ? "w-full bg-red-600" : "bg-blue-600",
+                                )}
+                                style={{ width: isSuccess || isError ? "100%" : `${progress.progress}%` }}
+                              />
+                            </div>
+                            {isError && progress.error && <p className="text-[11px] text-red-600">{progress.error}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="space-y-3 rounded-lg bg-red-50 p-4">
+                <div className="flex gap-2">
+                  <AlertCircle size={18} className="flex-shrink-0 text-red-600" />
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+                {registrationStep === "documents" && Object.values(uploadProgress).some((p) => p.status === "error") && (
+                  <Button onClick={retryFailedUploads} variant="outline" size="sm" className="w-full" disabled={loading}>
+                    Retry Failed Uploads
+                  </Button>
+                )}
+              </div>
+            )}
+
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Creating account..." : "Create account"}
+              {loading
+                ? registrationStep === "account"
+                  ? "Creating account..."
+                  : registrationStep === "vehicle"
+                    ? "Setting up motorcycle..."
+                    : "Uploading documents..."
+                : "Create account"}
             </Button>
           </form>
           <p className="mt-4 text-center text-sm text-neutral-500">
