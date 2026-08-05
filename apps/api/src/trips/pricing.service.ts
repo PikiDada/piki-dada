@@ -29,6 +29,10 @@ export class PricingService {
     return (deg * Math.PI) / 180;
   }
 
+  etaMinutesForDistance(distanceKm: number): number {
+    return Math.round((distanceKm / AVERAGE_SPEED_KMH) * 60);
+  }
+
   async estimateFare(rideType: RideType, pickup: LatLng, destination: LatLng) {
     const distanceKm = this.haversineDistanceKm(pickup, destination);
     const durationMin = (distanceKm / AVERAGE_SPEED_KMH) * 60;

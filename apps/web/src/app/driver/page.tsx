@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
+import { startRingtone, stopRingtone } from "@/lib/ringtone";
 import { SOCKET_EVENTS, type DriverProfile } from "@/lib/types";
 import { DriverNav } from "@/components/driver/driver-nav";
 import { VehicleSetup, DocumentUpload } from "@/components/driver/vehicle-setup";
@@ -16,6 +17,8 @@ interface IncomingRequest {
   destinationAddress: string;
   fare: number;
   rideType: string;
+  distanceToPickupKm?: number;
+  etaToPickupMin?: number;
 }
 
 export default function DriverDashboardPage() {
@@ -55,6 +58,15 @@ export default function DriverDashboardPage() {
       socket.off(SOCKET_EVENTS.TRIP_REQUESTED, handleRequest);
     };
   }, []);
+
+  useEffect(() => {
+    if (incoming) {
+      startRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [incoming]);
 
   useEffect(() => {
     if (!profile?.isOnline) {
@@ -134,6 +146,12 @@ export default function DriverDashboardPage() {
             {incoming.pickupAddress} → {incoming.destinationAddress}
           </p>
           <p className="text-lg font-bold">{incoming.fare?.toLocaleString()} UGX</p>
+          {incoming.distanceToPickupKm != null && (
+            <p className="mt-1 text-sm font-medium text-neutral-700">
+              {incoming.distanceToPickupKm.toFixed(1)} km away
+              {incoming.etaToPickupMin != null && ` · ~${incoming.etaToPickupMin} min to pickup`}
+            </p>
+          )}
           <div className="mt-3 flex gap-2">
             <Button className="flex-1" onClick={handleAccept}>
               Accept

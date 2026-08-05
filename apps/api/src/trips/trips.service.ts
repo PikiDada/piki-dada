@@ -62,6 +62,8 @@ export class TripsService {
         destinationAddress: trip.destinationAddress,
         fare: trip.fare,
         rideType: trip.rideType,
+        distanceToPickupKm: Number(driver.distanceKm.toFixed(2)),
+        etaToPickupMin: this.pricing.etaMinutesForDistance(driver.distanceKm),
       });
     }
 
