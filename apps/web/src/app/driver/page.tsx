@@ -21,51 +21,31 @@ interface IncomingRequest {
 export default function DriverDashboardPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [onlineBlockMsg, setOnlineBlockMsg] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
-  console.log("DriverDashboardPage rendered. Current profile state:", profile);
-
   const loadProfile = useCallback(() => {
-    console.log("Loading driver profile...");
+    setLoadError(null);
     apiFetch<DriverProfile>("/drivers/me")
       .then((data) => {
-        console.log("Profile loaded:", {
-          name: data.user.name,
-          approvalStatus: data.approvalStatus,
-          isOnline: data.isOnline,
-        });
         setProfile(data);
       })
       .catch((err) => {
-        console.error("Failed to load profile:", err);
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : "Could not load your driver profile. The server may be waking up — please retry.",
+        );
       });
   }, []);
 
   useEffect(() => {
-    console.log("useEffect: mounting, calling loadProfile");
     loadProfile();
   }, [loadProfile]);
-
-  // Debug: log all clicks on the page
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.textContent?.includes("online")) {
-        console.log("CLICK DETECTED on element:", {
-          tagName: target.tagName,
-          textContent: target.textContent,
-          classList: Array.from(target.classList),
-          id: target.id,
-        });
-      }
-    };
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, []);
 
   useEffect(() => {
     const socket = getSocket();
@@ -97,30 +77,16 @@ export default function DriverDashboardPage() {
   }, [profile?.isOnline]);
 
   async function toggleOnline() {
-    if (!profile) {
-      console.error("No profile loaded");
-      return;
-    }
-    console.log("Toggle online clicked. Current profile:", {
-      approvalStatus: profile.approvalStatus,
-      isOnline: profile.isOnline,
-    });
+    if (!profile) return;
     setToggling(true);
     try {
-      console.log("Calling /drivers/me/availability with isOnline:", !profile.isOnline);
       const updated = await apiFetch<DriverProfile>("/drivers/me/availability", {
         method: "PATCH",
         body: JSON.stringify({ isOnline: !profile.isOnline }),
       });
-      console.log("Success! Updated profile:", updated);
       setProfile({ ...profile, ...updated });
-    } catch (err) {
+    } catch {
       // approval gate or other error; reload to show banner
-      console.error("Failed to toggle online status:", err);
-      console.error("Error details:", {
-        message: err instanceof Error ? err.message : err,
-        stack: err instanceof Error ? err.stack : null,
-      });
       loadProfile();
     } finally {
       setToggling(false);
@@ -144,7 +110,20 @@ export default function DriverDashboardPage() {
     setIncoming(null);
   }
 
-  if (!profile) return <div className="p-6 text-center text-neutral-400">Loading...</div>;
+  if (!profile) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+        {loadError ? (
+          <>
+            <p className="text-sm text-red-600">{loadError}</p>
+            <Button onClick={loadProfile}>Retry</Button>
+          </>
+        ) : (
+          <p className="text-neutral-400">Loading...</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-4 pb-20">
@@ -198,24 +177,16 @@ export default function DriverDashboardPage() {
             className="mt-4 w-full"
             disabled={toggling}
             onClick={() => {
-              try {
-                console.log("🔴 BUTTON CLICKED");
-                console.log("Approval status:", profile.approvalStatus);
-                if (profile.approvalStatus !== "APPROVED") {
-                  const msg =
-                    profile.approvalStatus === "REJECTED"
-                      ? "Your application was rejected. Contact support to appeal."
-                      : "Your account is still pending admin approval. You will be able to go online once approved.";
-                  console.log("🔴 Approval blocked:", msg);
-                  setOnlineBlockMsg(msg);
-                  return;
-                }
-                console.log("🔴 Approval check passed. Calling toggleOnline()");
-                setOnlineBlockMsg(null);
-                toggleOnline();
-              } catch (err) {
-                console.error("🔴 ERROR in button onClick:", err);
+              if (profile.approvalStatus !== "APPROVED") {
+                setOnlineBlockMsg(
+                  profile.approvalStatus === "REJECTED"
+                    ? "Your application was rejected. Contact support to appeal."
+                    : "Your account is still pending admin approval. You will be able to go online once approved.",
+                );
+                return;
               }
+              setOnlineBlockMsg(null);
+              toggleOnline();
             }}
           >
             {profile.isOnline ? "Go offline" : "Go online"}
