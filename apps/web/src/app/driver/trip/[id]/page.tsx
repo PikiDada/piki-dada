@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { TripMap } from "@/components/maps/trip-map";
+import { CancelTripDialog } from "@/components/trip/cancel-trip-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
@@ -15,16 +16,29 @@ const NEXT_STATUS: Record<string, { next: TripStatus; label: string } | undefine
   IN_PROGRESS: { next: "COMPLETED", label: "Complete trip" },
 };
 
+const CANCELLABLE_STATUSES = ["ACCEPTED", "ARRIVED"];
+
 export default function DriverTripPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   useEffect(() => {
     apiFetch<Trip>(`/trips/${id}`).then(setTrip);
     const socket = getSocket();
     socket.emit("trip:join", id);
+
+    const handleUpdate = (updated: Trip) => {
+      if (updated.id === id) setTrip(updated);
+    };
+    socket.on(SOCKET_EVENTS.TRIP_STATUS_UPDATED, handleUpdate);
+    socket.on(SOCKET_EVENTS.TRIP_CANCELLED, handleUpdate);
+    return () => {
+      socket.off(SOCKET_EVENTS.TRIP_STATUS_UPDATED, handleUpdate);
+      socket.off(SOCKET_EVENTS.TRIP_CANCELLED, handleUpdate);
+    };
   }, [id]);
 
   useEffect(() => {
@@ -56,6 +70,16 @@ export default function DriverTripPage() {
     } finally {
       setUpdating(false);
     }
+  }
+
+  async function handleCancel(reason: string) {
+    const updated = await apiFetch<Trip>(`/trips/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "CANCELLED", cancellationReason: reason }),
+    });
+    setTrip(updated);
+    setShowCancelDialog(false);
+    setTimeout(() => router.push("/driver"), 1500);
   }
 
   if (!trip) return <div className="p-6 text-center text-neutral-400">Loading trip...</div>;
@@ -104,6 +128,17 @@ export default function DriverTripPage() {
             </Button>
           )}
 
+          {CANCELLABLE_STATUSES.includes(trip.status) && (
+            <Button
+              variant="destructive"
+              className="w-full"
+              disabled={updating}
+              onClick={() => setShowCancelDialog(true)}
+            >
+              Cancel trip
+            </Button>
+          )}
+
           {trip.status === "COMPLETED" && trip.payment?.status !== "PAID" && (
             <p className="text-center text-green-600">
               Trip completed! Earnings are added to your wallet once the passenger's payment is
@@ -113,8 +148,17 @@ export default function DriverTripPage() {
           {trip.status === "COMPLETED" && trip.payment?.status === "PAID" && (
             <p className="text-center text-green-600">Trip completed and paid!</p>
           )}
+          {trip.status === "CANCELLED" && (
+            <p className="text-center text-red-600">
+              Trip cancelled{trip.cancellationReason ? `: ${trip.cancellationReason}` : ""}
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      {showCancelDialog && (
+        <CancelTripDialog onConfirm={handleCancel} onDismiss={() => setShowCancelDialog(false)} />
+      )}
     </div>
   );
 }

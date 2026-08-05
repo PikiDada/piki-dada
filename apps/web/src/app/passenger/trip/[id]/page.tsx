@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { TripMap } from "@/components/maps/trip-map";
+import { CancelTripDialog } from "@/components/trip/cancel-trip-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { SOCKET_EVENTS, type LatLng, type Trip } from "@/lib/types";
+
+const CANCELLABLE_STATUSES = ["SEARCHING", "ACCEPTED", "ARRIVED"];
 
 const STATUS_LABEL: Record<string, string> = {
   SEARCHING: "Looking for a driver nearby...",
@@ -25,6 +28,7 @@ export default function PassengerTripPage() {
   const [driverLocation, setDriverLocation] = useState<LatLng | undefined>();
   const [stars, setStars] = useState(5);
   const [rated, setRated] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   useEffect(() => {
     apiFetch<Trip>(`/trips/${id}`).then(setTrip);
@@ -52,12 +56,13 @@ export default function PassengerTripPage() {
     };
   }, [id]);
 
-  async function handleCancel() {
+  async function handleCancel(reason: string) {
     const updated = await apiFetch<Trip>(`/trips/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status: "CANCELLED", cancellationReason: "Passenger cancelled" }),
+      body: JSON.stringify({ status: "CANCELLED", cancellationReason: reason }),
     });
     setTrip(updated);
+    setShowCancelDialog(false);
   }
 
   async function handleRate() {
@@ -100,6 +105,9 @@ export default function PassengerTripPage() {
       <Card className="mx-4">
         <CardContent className="space-y-3 pt-6">
           <p className="text-lg font-semibold">{STATUS_LABEL[trip.status] ?? trip.status}</p>
+          {trip.status === "CANCELLED" && trip.cancellationReason && (
+            <p className="text-sm text-red-600">Reason: {trip.cancellationReason}</p>
+          )}
           <p className="text-sm text-neutral-500">
             {trip.pickupAddress} → {trip.destinationAddress}
           </p>
@@ -124,8 +132,8 @@ export default function PassengerTripPage() {
             </div>
           )}
 
-          {["SEARCHING", "ACCEPTED"].includes(trip.status) && (
-            <Button variant="destructive" className="w-full" onClick={handleCancel}>
+          {CANCELLABLE_STATUSES.includes(trip.status) && (
+            <Button variant="destructive" className="w-full" onClick={() => setShowCancelDialog(true)}>
               Cancel ride
             </Button>
           )}
@@ -184,6 +192,10 @@ export default function PassengerTripPage() {
           )}
         </CardContent>
       </Card>
+
+      {showCancelDialog && (
+        <CancelTripDialog onConfirm={handleCancel} onDismiss={() => setShowCancelDialog(false)} />
+      )}
     </div>
   );
 }

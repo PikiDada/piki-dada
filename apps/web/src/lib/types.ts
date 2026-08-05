@@ -39,6 +39,7 @@ export interface Trip {
   passengerId: string;
   driverId?: string | null;
   paymentMethod: PaymentMethod;
+  cancellationReason?: string | null;
   createdAt: string;
   passenger?: { id: string; name: string; phone?: string | null };
   payment?: { id: string; status: "PENDING" | "PAID" | "FAILED" | "REFUNDED" } | null;
