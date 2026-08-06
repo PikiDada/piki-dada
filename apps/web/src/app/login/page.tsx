@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { redirectForRole } from "@/lib/auth-helpers";
 import Link from "next/link";
@@ -109,11 +109,6 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
-          <a href={apiUrl("/auth/google")} className="mt-3 block">
-            <Button variant="outline" className="w-full" type="button">
-              Continue with Google
-            </Button>
-          </a>
           <p className="mt-4 text-center text-sm text-neutral-500">
             No account?{" "}
             <Link href="/register" className="font-medium text-black underline">
