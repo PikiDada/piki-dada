@@ -63,8 +63,29 @@ All of these have placeholder values wired into `apps/api/.env` right now — th
 6. **DNS** — point `app.<yourdomain>` (CNAME) to Vercel and `api.<yourdomain>` (CNAME) to Render once you're ready to move off the default `*.vercel.app` / `*.onrender.com` URLs. No cPanel changes needed — cPanel hosting can't run this stack (see prior conversation notes on shared hosting limits).
 7. **Seed production data** — run `pnpm --filter api exec prisma db seed` once against the production `DATABASE_URL` (e.g. from your local machine with the prod connection string temporarily in `.env`, or via Render's shell).
 
+## Keeping the API warm
+
+Render's free tier sleeps the service after 15 minutes idle, making the next request take 15s+.
+Two independent pingers hit `GET /health` to prevent this:
+
+1. **Supabase `pg_cron` (primary)** — a job named `keep-api-warm` runs every 5 minutes directly in
+   the production Postgres instance, using `pg_net` to call the health endpoint. This is the reliable
+   one: it fires on schedule with no external service or account needed.
+
+   Inspect or change it with SQL against the production DB:
+   ```sql
+   SELECT jobid, jobname, schedule, active FROM cron.job WHERE jobname = 'keep-api-warm';
+   SELECT status, start_time FROM cron.job_run_details ORDER BY start_time DESC LIMIT 5;
+   SELECT cron.unschedule('keep-api-warm');  -- to remove
+   ```
+
+2. **GitHub Actions (`.github/workflows/keep-alive.yml`, backup)** — same ping every 10 minutes.
+   Treat this as best-effort only: GitHub delays scheduled workflows under load, sometimes by hours.
+
+If the API URL ever changes, **both** pingers must be updated — a stale hostname here fails silently.
+
 ## Known MVP limitations (documented, not bugs)
 
 - Apple Sign-In, Phone OTP, MTN/Airtel direct integration: deferred (cost money to set up — see auth/payments decisions made during build)
 - No Fleet Owner / Dispatcher portals, AI matching, bidding pricing, scheduled/multi-stop rides, loyalty/referrals, SOS — all explicitly out of scope for this MVP pass
-- Render free tier cold-starts after 15 min idle; Neon free tier auto-suspends similarly — first request after idle will be slow
+- Render free tier cold-starts after 15 min idle — mitigated by the keep-warm pingers above, but a cold start is still possible if both pingers fail
