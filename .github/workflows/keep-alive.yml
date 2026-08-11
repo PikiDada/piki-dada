@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping /health
-        run: curl -sf --max-time 60 https://piki-dada-api-xgen.onrender.com/health
+        run: curl -sf --max-time 180 --retry 3 --retry-all-errors https://piki-dada-api-xgen.onrender.com/health
