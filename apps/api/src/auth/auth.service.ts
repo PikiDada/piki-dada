@@ -43,11 +43,17 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, meta?: SessionMeta) {
-    const existing = await this.usersService.findByEmail(dto.email);
+    // Password hashing (Argon2id, deliberately CPU-expensive) doesn't depend on the
+    // duplicate-email check, so run them concurrently rather than paying for both in
+    // sequence -- this and the pairing below cut a slow, multi-round-trip endpoint down
+    // to two round-trip pairs instead of four sequential ones.
+    const [existing, passwordHash] = await Promise.all([
+      this.usersService.findByEmail(dto.email),
+      hashPassword(dto.password),
+    ]);
     if (existing) {
       throw new ConflictException('Email already registered');
     }
-    const passwordHash = await hashPassword(dto.password);
     const user = await this.usersService.create({
       email: dto.email,
       passwordHash,
@@ -56,8 +62,13 @@ export class AuthService {
       role: dto.role,
     });
     this.emailService.sendWelcomeEmail(user.email, user.name);
-    await this.sendEmailVerification(user.id, user.email);
-    return this.issueTokens(user.id, user.email, user.role, meta);
+    // Verification-token creation and session-token issuance are independent writes
+    // that both only need user.id -- no reason to serialize them.
+    const [, tokens] = await Promise.all([
+      this.sendEmailVerification(user.id, user.email),
+      this.issueTokens(user.id, user.email, user.role, meta),
+    ]);
+    return tokens;
   }
 
   private async createToken(userId: string, purpose: VerificationTokenPurpose, ttlMs: number) {
