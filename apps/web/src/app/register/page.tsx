@@ -101,8 +101,15 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
+    // registrationStep is React state, so reading it back later in this same
+    // function call (e.g. in the catch block below) would only ever see its
+    // value from before this call started -- state updates aren't visible
+    // until the next render. Track the step in a plain variable too so the
+    // error branch below can actually tell which step failed.
+    let currentStep: "account" | "vehicle" | "documents" = "account";
     try {
       // Step 1: Create account
+      currentStep = "account";
       setRegistrationStep("account");
       const data = await apiFetch<{
         accessToken: string;
@@ -115,6 +122,7 @@ export default function RegisterPage() {
 
       if (role === "DRIVER") {
         // Step 2: Add vehicle
+        currentStep = "vehicle";
         setRegistrationStep("vehicle");
         await apiFetch("/drivers/me/vehicle", {
           method: "POST",
@@ -122,6 +130,7 @@ export default function RegisterPage() {
         });
 
         // Step 3: Upload documents
+        currentStep = "documents";
         setRegistrationStep("documents");
         const uploadErrors: Partial<Record<DocumentType, string>> = {};
 
@@ -157,12 +166,14 @@ export default function RegisterPage() {
       clearSession();
       router.push(`/verify-email/sent?email=${encodeURIComponent(email)}`);
     } catch (err) {
-      if (registrationStep === "account") {
+      if (currentStep === "account") {
         setError("Failed to create account. " + (err instanceof Error ? err.message : "Please try again."));
-      } else if (registrationStep === "vehicle") {
+      } else if (currentStep === "vehicle") {
         setError(
           "Account created, but motorcycle details failed to save. Please contact support with your email " + email,
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       }
       setRegistrationStep("form");
     } finally {
