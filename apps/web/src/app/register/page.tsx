@@ -270,6 +270,7 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              <p className="text-xs text-neutral-600">Must be at least 8 characters.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirmPassword">Confirm password</Label>

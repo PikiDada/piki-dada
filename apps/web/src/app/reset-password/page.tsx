@@ -48,6 +48,7 @@ function ResetPasswordInner() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <p className="text-xs text-neutral-600">Must be at least 8 characters.</p>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Button type="submit" className="w-full" disabled={loading}>
