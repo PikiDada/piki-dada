@@ -12,6 +12,7 @@ export function InstallLink() {
   return (
     <Link
       href="/install"
+      aria-label="Install App"
       className="js-hide-if-pwa-installed flex items-center gap-1 rounded-full p-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
     >
       <Download size={16} />
