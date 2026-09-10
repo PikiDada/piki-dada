@@ -15,10 +15,10 @@ const csp = isProd
   ? [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' https://maps.googleapis.com",
-      "style-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://res.cloudinary.com https://*.googleusercontent.com",
       `connect-src 'self' ${apiUrl} ${apiWsUrl} https://maps.googleapis.com https://places.googleapis.com`,
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -26,10 +26,10 @@ const csp = isProd
   : [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://maps.googleapis.com",
-      "style-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://res.cloudinary.com https://*.googleusercontent.com",
       `connect-src 'self' ${apiUrl} ${apiWsUrl} http://localhost:* ws://localhost:* https://maps.googleapis.com https://places.googleapis.com`,
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "frame-ancestors 'none'",
     ].join("; ");
 
