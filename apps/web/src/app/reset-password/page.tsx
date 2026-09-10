@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
           <CardTitle>Set a new password</CardTitle>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<p className="text-sm text-neutral-500">Loading...</p>}>
+          <Suspense fallback={<p className="text-sm text-neutral-600">Loading...</p>}>
             <ResetPasswordInner />
           </Suspense>
         </CardContent>

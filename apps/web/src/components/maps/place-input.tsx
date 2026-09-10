@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import type { LatLng } from "@/lib/types";
+import { useMapsReady } from "./map-provider";
 
 interface PlaceInputProps {
   placeholder: string;
@@ -11,28 +12,19 @@ interface PlaceInputProps {
   onSelect: (address: string, location: LatLng) => void;
 }
 
-interface NominatimResult {
-  display_name: string;
-  lat: string;
-  lon: string;
-}
-
-// Rough bounding box over Uganda + border areas to bias OSM search results.
-const UGANDA_VIEWBOX = "29.5,4.5,35.5,-1.5";
-
 export function PlaceInput({ placeholder, value, onChange, onSelect }: PlaceInputProps) {
-  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const isLoaded = useMapsReady();
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompleteSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   function handleChange(text: string) {
     onChange(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (text.trim().length < 3) {
+    if (!isLoaded || text.trim().length < 3) {
       setSuggestions([]);
       setOpen(false);
       return;
@@ -41,25 +33,28 @@ export function PlaceInput({ placeholder, value, onChange, onSelect }: PlaceInpu
   }
 
   async function search(text: string) {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(text)}&viewbox=${UGANDA_VIEWBOX}&bounded=1&limit=5`;
-      const res = await fetch(url, { signal: controller.signal });
-      const data: NominatimResult[] = await res.json();
-      setSuggestions(data);
-      setOpen(data.length > 0);
-    } catch {
-      // ignore aborted or failed lookups — the manual fallback below still works
-    }
+    const { suggestions: results } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+      input: text,
+      includedRegionCodes: ["ug"],
+    });
+    setSuggestions(results);
+    setOpen(results.length > 0);
   }
 
-  function selectSuggestion(result: NominatimResult) {
-    onChange(result.display_name);
-    onSelect(result.display_name, { lat: Number(result.lat), lng: Number(result.lon) });
+  async function selectSuggestion(suggestion: google.maps.places.AutocompleteSuggestion) {
+    const prediction = suggestion.placePrediction;
+    if (!prediction) return;
+
+    const description = prediction.text.text;
+    onChange(description);
     setSuggestions([]);
     setOpen(false);
+
+    const place = prediction.toPlace();
+    await place.fetchFields({ fields: ["location"] });
+    if (place.location) {
+      onSelect(description, { lat: place.location.lat(), lng: place.location.lng() });
+    }
   }
 
   function applyManualCoords(nextLat: string, nextLng: string) {
@@ -82,14 +77,14 @@ export function PlaceInput({ placeholder, value, onChange, onSelect }: PlaceInpu
         />
         {open && (
           <ul className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg">
-            {suggestions.map((s, i) => (
-              <li key={i}>
+            {suggestions.map((s) => (
+              <li key={s.placePrediction?.placeId}>
                 <button
                   type="button"
                   onClick={() => selectSuggestion(s)}
                   className="block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50"
                 >
-                  {s.display_name}
+                  {s.placePrediction?.text.text}
                 </button>
               </li>
             ))}
@@ -100,7 +95,7 @@ export function PlaceInput({ placeholder, value, onChange, onSelect }: PlaceInpu
         <button
           type="button"
           onClick={() => setManualMode(true)}
-          className="text-xs text-neutral-400 underline hover:text-neutral-600"
+          className="text-xs text-neutral-600 underline hover:text-neutral-800"
         >
           Can&apos;t find it? Enter coordinates manually
         </button>

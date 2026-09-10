@@ -84,7 +84,7 @@ export default function PassengerTripPage() {
     setTrip(updated);
   }
 
-  if (!trip) return <div className="p-6 text-center text-neutral-400">Loading trip...</div>;
+  if (!trip) return <div className="p-6 text-center text-neutral-600">Loading trip...</div>;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -108,7 +108,7 @@ export default function PassengerTripPage() {
           {trip.status === "CANCELLED" && trip.cancellationReason && (
             <p className="text-sm text-red-600">Reason: {trip.cancellationReason}</p>
           )}
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-neutral-600">
             {trip.pickupAddress} → {trip.destinationAddress}
           </p>
           <p className="text-2xl font-bold">
@@ -118,7 +118,7 @@ export default function PassengerTripPage() {
           {trip.driver && (
             <div className="rounded-xl bg-neutral-50 p-3 text-sm">
               <p className="font-medium">{trip.driver.user?.name}</p>
-              <p className="text-neutral-500">
+              <p className="text-neutral-600">
                 {trip.driver.vehicle?.make} {trip.driver.vehicle?.model} ·{" "}
                 {trip.driver.vehicle?.plateNumber}
               </p>

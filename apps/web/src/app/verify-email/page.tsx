@@ -21,7 +21,7 @@ function VerifyEmailInner() {
       .catch(() => setStatus("error"));
   }, [token]);
 
-  if (status === "pending") return <p className="text-sm text-neutral-500">Verifying...</p>;
+  if (status === "pending") return <p className="text-sm text-neutral-600">Verifying...</p>;
   if (status === "success") {
     return (
       <div className="space-y-3">
@@ -43,7 +43,7 @@ export default function VerifyEmailPage() {
           <CardTitle>Email verification</CardTitle>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<p className="text-sm text-neutral-500">Loading...</p>}>
+          <Suspense fallback={<p className="text-sm text-neutral-600">Loading...</p>}>
             <VerifyEmailInner />
           </Suspense>
         </CardContent>

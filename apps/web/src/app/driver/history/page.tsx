@@ -75,7 +75,7 @@ export default function DriverHistoryPage() {
         <Card className="mb-4">
           <CardContent className="flex items-center justify-between pt-4">
             <div>
-              <p className="text-xs text-neutral-400">Wallet balance</p>
+              <p className="text-xs text-neutral-600">Wallet balance</p>
               <p className="text-2xl font-bold">
                 {wallet.balance.toLocaleString()} {wallet.currency}
               </p>
@@ -96,28 +96,28 @@ export default function DriverHistoryPage() {
         ].map((e) => (
           <Card key={e.label}>
             <CardContent className="pt-4 text-center">
-              <p className="text-xs text-neutral-400">{e.label}</p>
+              <p className="text-xs text-neutral-600">{e.label}</p>
               <p className="font-bold">{e.value.toLocaleString()}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <h2 className="mb-2 text-sm font-medium text-neutral-500">Trip history</h2>
+      <h2 className="mb-2 text-sm font-medium text-neutral-600">Trip history</h2>
       <div className="space-y-3">
-        {trips.length === 0 && <p className="text-sm text-neutral-400">No trips yet.</p>}
+        {trips.length === 0 && <p className="text-sm text-neutral-600">No trips yet.</p>}
         {trips.map((trip) => (
           <Card key={trip.id}>
             <CardContent className="flex items-center justify-between pt-4">
               <div>
                 <p className="text-sm font-medium">{trip.pickupAddress}</p>
-                <p className="text-xs text-neutral-400">→ {trip.destinationAddress}</p>
+                <p className="text-xs text-neutral-600">→ {trip.destinationAddress}</p>
               </div>
               <div className="text-right">
                 <p className="font-semibold">
                   {trip.fare?.toLocaleString()} {trip.currency}
                 </p>
-                <p className="text-xs text-neutral-400">{trip.status}</p>
+                <p className="text-xs text-neutral-600">{trip.status}</p>
               </div>
             </CardContent>
           </Card>

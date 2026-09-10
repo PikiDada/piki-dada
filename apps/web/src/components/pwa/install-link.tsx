@@ -12,7 +12,7 @@ export function InstallLink() {
   return (
     <Link
       href="/install"
-      className="js-hide-if-pwa-installed flex items-center gap-1 rounded-full p-2 text-xs font-medium text-neutral-500 hover:bg-neutral-100"
+      className="js-hide-if-pwa-installed flex items-center gap-1 rounded-full p-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
     >
       <Download size={16} />
       <span className="hidden sm:inline">Install App</span>

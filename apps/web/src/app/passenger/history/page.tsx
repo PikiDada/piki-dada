@@ -18,15 +18,15 @@ export default function PassengerHistoryPage() {
     <div className="min-h-screen p-4 pb-20">
       <h1 className="mb-4 text-xl font-bold">Your rides</h1>
       <div className="space-y-3">
-        {trips.length === 0 && <p className="text-sm text-neutral-400">No rides yet.</p>}
+        {trips.length === 0 && <p className="text-sm text-neutral-600">No rides yet.</p>}
         {trips.map((trip) => (
           <Link key={trip.id} href={`/passenger/trip/${trip.id}`}>
             <Card>
               <CardContent className="flex items-center justify-between pt-4">
                 <div>
                   <p className="text-sm font-medium">{trip.pickupAddress}</p>
-                  <p className="text-xs text-neutral-400">→ {trip.destinationAddress}</p>
-                  <p className="mt-1 text-xs text-neutral-400">
+                  <p className="text-xs text-neutral-600">→ {trip.destinationAddress}</p>
+                  <p className="mt-1 text-xs text-neutral-600">
                     {new Date(trip.createdAt).toLocaleString()}
                   </p>
                 </div>
@@ -34,7 +34,7 @@ export default function PassengerHistoryPage() {
                   <p className="font-semibold">
                     {trip.fare?.toLocaleString()} {trip.currency}
                   </p>
-                  <p className="text-xs text-neutral-400">{trip.status}</p>
+                  <p className="text-xs text-neutral-600">{trip.status}</p>
                 </div>
               </CardContent>
             </Card>

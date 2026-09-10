@@ -62,7 +62,7 @@ export default function AdminPricingPage() {
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Pricing rules</h1>
-      <p className="mb-4 text-sm text-neutral-500">
+      <p className="mb-4 text-sm text-neutral-600">
         Shared fare used for both Passenger and Package Delivery requests.
       </p>
       <div className="grid gap-4 lg:grid-cols-3">

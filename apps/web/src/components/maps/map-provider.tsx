@@ -1,14 +1,20 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import { useJsApiLoader } from "@react-google-maps/api";
 
-// OpenStreetMap tiles need no API key, so the map is always ready.
-// Kept as a context (instead of deleting it) so call sites don't change
-// if/when we swap back to a keyed provider like Google Maps later.
-const MapsReadyContext = createContext(true);
+const MapsReadyContext = createContext(false);
+
+const GOOGLE_MAPS_LIBRARIES: "places"[] = ["places"];
 
 export function MapsProvider({ children }: { children: React.ReactNode }) {
-  return <MapsReadyContext.Provider value={true}>{children}</MapsReadyContext.Provider>;
+  const { isLoaded } = useJsApiLoader({
+    id: "piki-dada-google-maps",
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+
+  return <MapsReadyContext.Provider value={isLoaded}>{children}</MapsReadyContext.Provider>;
 }
 
 export function useMapsReady() {

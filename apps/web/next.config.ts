@@ -14,10 +14,10 @@ const isProd = process.env.NODE_ENV === "production";
 const csp = isProd
   ? [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' https://maps.googleapis.com",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://tiles.stadiamaps.com https://res.cloudinary.com https://*.googleusercontent.com",
-      `connect-src 'self' ${apiUrl} ${apiWsUrl} https://nominatim.openstreetmap.org`,
+      "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://res.cloudinary.com https://*.googleusercontent.com",
+      `connect-src 'self' ${apiUrl} ${apiWsUrl} https://maps.googleapis.com`,
       "font-src 'self' data:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
@@ -25,15 +25,16 @@ const csp = isProd
     ].join("; ")
   : [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://maps.googleapis.com",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://tiles.stadiamaps.com https://res.cloudinary.com https://*.googleusercontent.com",
-      `connect-src 'self' ${apiUrl} ${apiWsUrl} http://localhost:* ws://localhost:* https://nominatim.openstreetmap.org`,
+      "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://res.cloudinary.com https://*.googleusercontent.com",
+      `connect-src 'self' ${apiUrl} ${apiWsUrl} http://localhost:* ws://localhost:* https://maps.googleapis.com`,
       "font-src 'self' data:",
       "frame-ancestors 'none'",
     ].join("; ");
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async headers() {
     return [
       {

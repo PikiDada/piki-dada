@@ -87,13 +87,13 @@ export default function AdminPushPage() {
         </Card>
 
         <div className="space-y-2 lg:col-span-2">
-          {history.length === 0 && <p className="text-sm text-neutral-400">No broadcasts sent yet.</p>}
+          {history.length === 0 && <p className="text-sm text-neutral-600">No broadcasts sent yet.</p>}
           {history.map((log) => (
             <Card key={log.id}>
               <CardContent className="pt-4">
                 <p className="font-medium">{log.title}</p>
-                <p className="text-sm text-neutral-500">{log.body}</p>
-                <p className="mt-2 text-xs text-neutral-400">
+                <p className="text-sm text-neutral-600">{log.body}</p>
+                <p className="mt-2 text-xs text-neutral-600">
                   {new Date(log.createdAt).toLocaleString()} · sent {log.sentCount} · failed{" "}
                   {log.failedCount}
                 </p>

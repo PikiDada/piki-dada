@@ -26,7 +26,7 @@ export function PassengerNav() {
           href={href}
           className={cn(
             "relative flex flex-col items-center gap-1 px-4 py-1 text-xs",
-            pathname === href ? "text-black" : "text-neutral-400",
+            pathname === href ? "text-black" : "text-neutral-600",
           )}
         >
           {pathname === href && <span className="absolute -top-2 h-1 w-6 rounded-full bg-[#F4C12C]" />}
@@ -40,7 +40,7 @@ export function PassengerNav() {
           clearSession();
           router.push("/login");
         }}
-        className="flex flex-col items-center gap-1 px-4 py-1 text-xs text-neutral-400 transition-all duration-150 hover:scale-[1.08] active:scale-[0.92] hover:text-neutral-700"
+        className="flex flex-col items-center gap-1 px-4 py-1 text-xs text-neutral-600 transition-all duration-150 hover:scale-[1.08] active:scale-[0.92] hover:text-neutral-700"
       >
         Logout
       </button>

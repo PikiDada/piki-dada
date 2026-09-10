@@ -34,7 +34,7 @@ function SentInner() {
         <span className="font-medium text-black">{email || "your email"}</span>.
         Click the link in that email to activate your account.
       </p>
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-600">
         Check your spam folder if you don&apos;t see it within a minute.
       </p>
 
@@ -51,7 +51,7 @@ function SentInner() {
         </Button>
       )}
 
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-neutral-600">
         Already verified?{" "}
         <Link href="/login" className="font-medium text-black underline">
           Sign in
@@ -70,7 +70,7 @@ export default function VerifyEmailSentPage() {
           <CardTitle>Check your email</CardTitle>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<p className="text-sm text-neutral-500">Loading...</p>}>
+          <Suspense fallback={<p className="text-sm text-neutral-600">Loading...</p>}>
             <SentInner />
           </Suspense>
         </CardContent>

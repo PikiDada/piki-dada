@@ -19,7 +19,7 @@ export default function AdminDashboardPage() {
     apiFetch<Stats>("/admin/stats").then(setStats);
   }, []);
 
-  if (!stats) return <p className="text-neutral-400">Loading...</p>;
+  if (!stats) return <p className="text-neutral-600">Loading...</p>;
 
   const cards = [
     { label: "Total trips", value: stats.totalTrips },
@@ -36,7 +36,7 @@ export default function AdminDashboardPage() {
         {cards.map((c) => (
           <Card key={c.label}>
             <CardContent className="pt-6">
-              <p className="text-sm text-neutral-500">{c.label}</p>
+              <p className="text-sm text-neutral-600">{c.label}</p>
               <p className="text-2xl font-bold">{c.value}</p>
             </CardContent>
           </Card>

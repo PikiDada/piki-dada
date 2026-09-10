@@ -42,7 +42,7 @@ export default function CompleteProfilePage() {
           <CardTitle>Add your phone number</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm text-neutral-500">
+          <p className="mb-4 text-sm text-neutral-600">
             A phone number is required so drivers and passengers can reach each other during a
             trip.
           </p>

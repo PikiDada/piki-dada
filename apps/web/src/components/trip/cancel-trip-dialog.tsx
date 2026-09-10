@@ -35,7 +35,7 @@ export function CancelTripDialog({ onConfirm, onDismiss }: CancelTripDialogProps
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
         <p className="font-semibold">Cancel trip</p>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="mt-1 text-sm text-neutral-600">
           Please tell us why you&apos;re cancelling — it helps us improve.
         </p>
 
@@ -62,7 +62,7 @@ export function CancelTripDialog({ onConfirm, onDismiss }: CancelTripDialogProps
           onChange={(e) => setReason(e.target.value)}
           placeholder="Tell us more..."
           rows={3}
-          className="mt-3 w-full rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-black"
+          className="mt-3 w-full rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-black"
         />
 
         <div className="mt-4 flex gap-2">

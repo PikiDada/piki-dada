@@ -27,7 +27,7 @@ export function AdminNav() {
     <aside className="fixed inset-y-0 left-0 w-56 border-r border-neutral-200 bg-white p-4">
       <div className="mb-6 flex items-center gap-2 px-2">
         <Image src="/brand/pikidada_logo4.png" alt="Piki Dada" width={120} height={39} />
-        <span className="text-xs font-semibold text-neutral-400">Admin</span>
+        <span className="text-xs font-semibold text-neutral-600">Admin</span>
       </div>
       <nav className="space-y-1">
         {ITEMS.map(({ href, label, icon: Icon }) => (

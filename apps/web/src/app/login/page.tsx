@@ -84,7 +84,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <Link href="/forgot-password" className="text-xs text-neutral-500 underline">
+              <Link href="/forgot-password" className="text-xs text-neutral-600 underline">
                 Forgot password?
               </Link>
             </div>
@@ -109,7 +109,7 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-neutral-500">
+          <p className="mt-4 text-center text-sm text-neutral-600">
             No account?{" "}
             <Link href="/register" className="font-medium text-black underline">
               Sign up

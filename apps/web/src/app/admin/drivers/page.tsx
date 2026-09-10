@@ -96,7 +96,7 @@ async function downloadAllDocuments(driverName: string, documents: Array<{ id: s
 
 function Spinner() {
   return (
-    <div className="flex items-center gap-2 py-8 text-neutral-400">
+    <div className="flex items-center gap-2 py-8 text-neutral-600">
       <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600" />
       <span className="text-sm">Loading...</span>
     </div>
@@ -132,15 +132,15 @@ export default function AdminDriversPage() {
     <div>
       <h1 className="mb-6 text-2xl font-bold">Pending driver approvals</h1>
       <div className="space-y-3">
-        {loading ? <Spinner /> : drivers.length === 0 && <p className="text-neutral-400">No pending drivers.</p>}
+        {loading ? <Spinner /> : drivers.length === 0 && <p className="text-neutral-600">No pending drivers.</p>}
         {drivers.map((d) => (
           <Card key={d.id}>
             <CardContent className="flex items-center justify-between pt-4">
               <div>
                 <p className="font-medium">{d.user.name}</p>
-                <p className="text-sm text-neutral-500">{d.user.email}</p>
+                <p className="text-sm text-neutral-600">{d.user.email}</p>
                 {d.vehicle ? (
-                  <p className="text-sm text-neutral-500">
+                  <p className="text-sm text-neutral-600">
                     {d.vehicle.make} {d.vehicle.model} · {d.vehicle.plateNumber} ·{" "}
                     {d.vehicle.rideType}
                   </p>
@@ -148,7 +148,7 @@ export default function AdminDriversPage() {
                   <p className="text-sm text-yellow-600">No vehicle added yet</p>
                 )}
                 {d.documents.length === 0 ? (
-                  <p className="text-xs text-neutral-400">No documents uploaded</p>
+                  <p className="text-xs text-neutral-600">No documents uploaded</p>
                 ) : (
                   <div className="mt-2 flex flex-wrap gap-3">
                     {d.documents.map((doc) => {
@@ -158,7 +158,7 @@ export default function AdminDriversPage() {
                           key={doc.id}
                           type="button"
                           onClick={() => downloadDocument(doc.id, doc.type, d.user.name)}
-                          className="flex flex-col items-center gap-1 text-xs text-neutral-500 hover:text-black"
+                          className="flex flex-col items-center gap-1 text-xs text-neutral-600 hover:text-black"
                         >
                           {isImage ? (
                             // eslint-disable-next-line @next/next/no-img-element

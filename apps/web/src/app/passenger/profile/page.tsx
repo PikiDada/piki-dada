@@ -57,7 +57,7 @@ export default function PassengerProfilePage() {
     setSaved(true);
   }
 
-  if (!profile) return <div className="p-6 text-center text-neutral-400">Loading...</div>;
+  if (!profile) return <div className="p-6 text-center text-neutral-600">Loading...</div>;
 
   return (
     <div className="min-h-screen p-4 pb-20">
@@ -91,7 +91,7 @@ export default function PassengerProfilePage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {sessions.length === 0 && (
-            <p className="text-sm text-neutral-400">No active sessions.</p>
+            <p className="text-sm text-neutral-600">No active sessions.</p>
           )}
           {sessions.map((s) => (
             <div
@@ -100,7 +100,7 @@ export default function PassengerProfilePage() {
             >
               <div>
                 <p className="font-medium">{s.userAgent ?? "Unknown device"}</p>
-                <p className="text-neutral-500">
+                <p className="text-neutral-600">
                   {s.ipAddress ?? "Unknown IP"} ·{" "}
                   {new Date(s.createdAt).toLocaleString()}
                 </p>

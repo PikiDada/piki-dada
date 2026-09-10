@@ -39,7 +39,7 @@ function AuthCallbackInner() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <p className="text-neutral-500">Signing you in...</p>
+      <p className="text-neutral-600">Signing you in...</p>
     </div>
   );
 }
@@ -49,7 +49,7 @@ export default function AuthCallbackPage() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center">
-          <p className="text-neutral-500">Signing you in...</p>
+          <p className="text-neutral-600">Signing you in...</p>
         </div>
       }
     >

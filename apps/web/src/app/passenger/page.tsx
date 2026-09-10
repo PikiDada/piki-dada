@@ -101,7 +101,7 @@ export default function PassengerBookingPage() {
             type="button"
             onClick={useMyLocation}
             disabled={locating}
-            className="text-xs text-neutral-500 underline hover:text-neutral-700"
+            className="text-xs text-neutral-600 underline hover:text-neutral-700"
           >
             {locating ? "Getting your location..." : "📍 Use my current location"}
           </button>

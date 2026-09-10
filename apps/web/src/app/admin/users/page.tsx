@@ -16,7 +16,7 @@ interface AdminUser {
 
 function Spinner() {
   return (
-    <div className="flex items-center gap-2 py-8 text-neutral-400">
+    <div className="flex items-center gap-2 py-8 text-neutral-600">
       <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600" />
       <span className="text-sm">Loading...</span>
     </div>
@@ -80,15 +80,15 @@ export default function AdminUsersPage() {
         {loading ? (
           <Spinner />
         ) : users.length === 0 ? (
-          <p className="text-neutral-400">No users found.</p>
+          <p className="text-neutral-600">No users found.</p>
         ) : users.map((u) => (
           <Card key={u.id}>
             <CardContent className="flex items-center justify-between pt-4">
               <div>
                 <p className="font-medium">
-                  {u.name} <span className="text-xs text-neutral-400">({u.role})</span>
+                  {u.name} <span className="text-xs text-neutral-600">({u.role})</span>
                 </p>
-                <p className="text-sm text-neutral-500">{u.email}</p>
+                <p className="text-sm text-neutral-600">{u.email}</p>
               </div>
               <div className="flex gap-2">
                 {u.role !== "ADMIN" && (

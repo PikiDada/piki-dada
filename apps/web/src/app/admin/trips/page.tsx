@@ -19,7 +19,7 @@ interface AdminTrip {
 
 function Spinner() {
   return (
-    <div className="flex items-center gap-2 py-8 text-neutral-400">
+    <div className="flex items-center gap-2 py-8 text-neutral-600">
       <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600" />
       <span className="text-sm">Loading...</span>
     </div>
@@ -43,7 +43,7 @@ export default function AdminTripsPage() {
         {loading ? (
           <Spinner />
         ) : trips.length === 0 ? (
-          <p className="text-neutral-400">No rides yet.</p>
+          <p className="text-neutral-600">No rides yet.</p>
         ) : trips.map((t) => (
           <Card key={t.id}>
             <CardContent className="flex items-center justify-between pt-4 text-sm">
@@ -51,7 +51,7 @@ export default function AdminTripsPage() {
                 <p className="font-medium">
                   {t.passenger.name} → {t.driver?.user.name ?? "unassigned"}
                 </p>
-                <p className="text-neutral-500">
+                <p className="text-neutral-600">
                   {t.pickupAddress} → {t.destinationAddress}
                 </p>
               </div>
@@ -59,7 +59,7 @@ export default function AdminTripsPage() {
                 <p className="font-semibold">
                   {t.fare?.toLocaleString() ?? "-"} {t.currency}
                 </p>
-                <p className="text-neutral-400">{t.status}</p>
+                <p className="text-neutral-600">{t.status}</p>
               </div>
             </CardContent>
           </Card>

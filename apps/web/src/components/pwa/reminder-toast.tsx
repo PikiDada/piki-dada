@@ -53,7 +53,7 @@ export function ReminderToast() {
   return (
     <div className="fixed bottom-4 right-4 z-50 w-72 rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl">
       <p className="text-sm font-semibold">Install Piki Dada</p>
-      <p className="mt-1 text-xs text-neutral-500">
+      <p className="mt-1 text-xs text-neutral-600">
         {message ?? "Add Piki Dada to your home screen for faster access."}
       </p>
       <div className="mt-3 flex gap-2">

@@ -131,7 +131,7 @@ export default function DriverDashboardPage() {
             <Button onClick={loadProfile}>Retry</Button>
           </>
         ) : (
-          <p className="text-neutral-400">Loading...</p>
+          <p className="text-neutral-600">Loading...</p>
         )}
       </div>
     );
@@ -142,7 +142,7 @@ export default function DriverDashboardPage() {
       {incoming && (
         <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-black bg-white p-4 shadow-xl">
           <p className="font-semibold">New ride request</p>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-neutral-600">
             {incoming.pickupAddress} → {incoming.destinationAddress}
           </p>
           <p className="text-lg font-bold">{incoming.fare?.toLocaleString()} UGX</p>
@@ -188,7 +188,7 @@ export default function DriverDashboardPage() {
           <CardTitle>{profile.user.name}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-neutral-600">
             ⭐ {profile.rating.toFixed(1)} · {profile.totalTrips} trips
           </p>
           <Button

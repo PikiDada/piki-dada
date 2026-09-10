@@ -337,7 +337,7 @@ export default function RegisterPage() {
                               "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-4 text-center transition-colors duration-150",
                               file
                                 ? "border-green-500 bg-green-50 text-green-700"
-                                : "border-neutral-300 bg-neutral-50 text-neutral-500 hover:border-[#F4C12C] hover:bg-yellow-50 hover:text-neutral-700",
+                                : "border-neutral-300 bg-neutral-50 text-neutral-600 hover:border-[#F4C12C] hover:bg-yellow-50 hover:text-neutral-700",
                             )}
                           >
                             {file ? (
@@ -470,7 +470,7 @@ export default function RegisterPage() {
                 : "Create account"}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-neutral-500">
+          <p className="mt-4 text-center text-sm text-neutral-600">
             Already have an account?{" "}
             <Link href="/login" className="font-medium text-black underline">
               Sign in

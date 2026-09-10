@@ -19,7 +19,7 @@ interface Coupon {
 
 function Spinner() {
   return (
-    <div className="flex items-center gap-2 py-8 text-neutral-400">
+    <div className="flex items-center gap-2 py-8 text-neutral-600">
       <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600" />
       <span className="text-sm">Loading...</span>
     </div>
@@ -113,13 +113,13 @@ export default function AdminCouponsPage() {
           {loading ? (
             <Spinner />
           ) : coupons.length === 0 ? (
-            <p className="py-8 text-neutral-400">No coupons yet.</p>
+            <p className="py-8 text-neutral-600">No coupons yet.</p>
           ) : coupons.map((c) => (
             <Card key={c.id}>
               <CardContent className="flex items-center justify-between pt-4">
                 <div>
                   <p className="font-mono font-medium">{c.code}</p>
-                  <p className="text-sm text-neutral-500">
+                  <p className="text-sm text-neutral-600">
                     {c.discountAmount ? `${c.discountAmount} UGX off` : `${c.discountPercent}% off`}{" "}
                     · used {c.usedCount}
                     {c.maxUses ? `/${c.maxUses}` : ""}
@@ -130,7 +130,7 @@ export default function AdminCouponsPage() {
                     Deactivate
                   </Button>
                 ) : (
-                  <span className="text-xs text-neutral-400">Inactive</span>
+                  <span className="text-xs text-neutral-600">Inactive</span>
                 )}
               </CardContent>
             </Card>

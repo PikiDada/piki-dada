@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import dynamic from "next/dynamic";
-import type { DivIcon } from "leaflet";
 import type { LatLng } from "@/lib/types";
+import { useMapsReady } from "./map-provider";
 
-const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
+const GoogleMap = dynamic(() => import("@react-google-maps/api").then((m) => m.GoogleMap), { ssr: false });
+const Marker = dynamic(() => import("@react-google-maps/api").then((m) => m.Marker), { ssr: false });
 
 interface TripMapProps {
   pickup?: LatLng;
@@ -18,38 +17,27 @@ interface TripMapProps {
 
 const defaultCenter: LatLng = { lat: 0.3476, lng: 32.5825 };
 
-function useDivIcon(label: string, background: string) {
-  const [icon, setIcon] = useState<DivIcon | null>(null);
-
-  useEffect(() => {
-    import("leaflet").then((L) => {
-      setIcon(
-        L.divIcon({
-          html: `<div style="background:${background};color:#fff;border-radius:9999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,0.4)">${label}</div>`,
-          className: "",
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-        }),
-      );
-    });
-  }, [label, background]);
-
-  return icon;
+function pinIcon(label: string, background: string): google.maps.Icon {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="14" fill="${background}"/><text x="14" y="19" font-size="14" text-anchor="middle" fill="#fff" font-family="sans-serif">${label}</text></svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new window.google.maps.Size(28, 28),
+    anchor: new window.google.maps.Point(14, 14),
+  };
 }
 
 export function TripMap({ pickup, destination, driverLocation, height = "300px" }: TripMapProps) {
-  const [mounted, setMounted] = useState(false);
-  const pickupIcon = useDivIcon("P", "#16a34a");
-  const destinationIcon = useDivIcon("D", "#dc2626");
-  const driverIcon = useDivIcon("🚗", "#111827");
+  const isLoaded = useMapsReady();
 
-  useEffect(() => setMounted(true), []);
+  const pickupIcon = useMemo(() => (isLoaded ? pinIcon("P", "#16a34a") : undefined), [isLoaded]);
+  const destinationIcon = useMemo(() => (isLoaded ? pinIcon("D", "#dc2626") : undefined), [isLoaded]);
+  const driverIcon = useMemo(() => (isLoaded ? pinIcon("🚗", "#111827") : undefined), [isLoaded]);
 
-  if (!mounted) {
+  if (!isLoaded) {
     return (
       <div
         style={{ height }}
-        className="flex items-center justify-center rounded-2xl bg-neutral-100 text-sm text-neutral-400"
+        className="flex items-center justify-center rounded-2xl bg-neutral-100 text-sm text-neutral-600"
       >
         Loading map...
       </div>
@@ -60,24 +48,21 @@ export function TripMap({ pickup, destination, driverLocation, height = "300px" 
 
   return (
     <div style={{ height }} className="overflow-hidden rounded-2xl">
-      <MapContainer
-        center={[center.lat, center.lng]}
+      <GoogleMap
+        center={center}
         zoom={14}
-        style={{ width: "100%", height: "100%" }}
-        scrollWheelZoom={false}
+        mapContainerStyle={{ width: "100%", height: "100%" }}
+        options={{
+          scrollwheel: false,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+        }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url={`https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${process.env.NEXT_PUBLIC_STADIA_MAPS_API_KEY ?? ""}`}
-        />
-        {pickup && pickupIcon && <Marker position={[pickup.lat, pickup.lng]} icon={pickupIcon} />}
-        {destination && destinationIcon && (
-          <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} />
-        )}
-        {driverLocation && driverIcon && (
-          <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />
-        )}
-      </MapContainer>
+        {pickup && pickupIcon && <Marker position={pickup} icon={pickupIcon} />}
+        {destination && destinationIcon && <Marker position={destination} icon={destinationIcon} />}
+        {driverLocation && driverIcon && <Marker position={driverLocation} icon={driverIcon} />}
+      </GoogleMap>
     </div>
   );
 }

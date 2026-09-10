@@ -82,7 +82,7 @@ export default function DriverTripPage() {
     setTimeout(() => router.push("/driver"), 1500);
   }
 
-  if (!trip) return <div className="p-6 text-center text-neutral-400">Loading trip...</div>;
+  if (!trip) return <div className="p-6 text-center text-neutral-600">Loading trip...</div>;
 
   const step = NEXT_STATUS[trip.status];
   const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${
@@ -101,7 +101,7 @@ export default function DriverTripPage() {
 
       <Card className="mx-4">
         <CardContent className="space-y-3 pt-6">
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-neutral-600">
             {trip.pickupAddress} → {trip.destinationAddress}
           </p>
           <p className="text-2xl font-bold">

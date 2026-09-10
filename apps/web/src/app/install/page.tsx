@@ -69,7 +69,7 @@ export default function InstallPage() {
         className="rounded-2xl shadow-md"
       />
       <h1 className="text-3xl font-bold">Install Piki Dada</h1>
-      <p className="max-w-sm text-neutral-500">
+      <p className="max-w-sm text-neutral-600">
         Add Piki Dada to your home screen for faster booking and offline-ready access.
       </p>
 
@@ -107,7 +107,7 @@ export default function InstallPage() {
         </Button>
       )}
 
-      {message && <p className="text-sm text-neutral-500">{message}</p>}
+      {message && <p className="text-sm text-neutral-600">{message}</p>}
     </div>
   );
 }

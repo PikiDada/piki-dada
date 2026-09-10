@@ -38,7 +38,7 @@ export function PushBell() {
       onClick={handleSubscribe}
       disabled={loading}
       aria-label="Enable notifications"
-      className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 disabled:opacity-50"
+      className="rounded-full p-2 text-neutral-600 hover:bg-neutral-100 disabled:opacity-50"
     >
       <Bell size={18} />
     </button>
