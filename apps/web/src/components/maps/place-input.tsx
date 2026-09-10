@@ -50,7 +50,7 @@ export function PlaceInput({ placeholder, value, onChange, onSelect }: PlaceInpu
     setSuggestions([]);
     setOpen(false);
 
-    const place = prediction.toPlace();
+    const place = new google.maps.places.Place({ id: prediction.placeId });
     await place.fetchFields({ fields: ["location"] });
     if (place.location) {
       onSelect(description, { lat: place.location.lat(), lng: place.location.lng() });
