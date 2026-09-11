@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiUrl } from "@/lib/api";
 import { useAuthStore, type UserRole } from "@/lib/auth-store";
 import type { DocumentType } from "@/lib/types";
 import Link from "next/link";
@@ -244,6 +244,20 @@ export default function RegisterPage() {
               </button>
             ))}
           </div>
+          {role === "PASSENGER" && (
+            <>
+              <a href={apiUrl("/auth/google")} className="mb-4 block">
+                <Button variant="outline" className="w-full" type="button">
+                  Continue with Google
+                </Button>
+              </a>
+              <div className="mb-4 flex items-center gap-3 text-xs text-neutral-600">
+                <div className="h-px flex-1 bg-neutral-200" />
+                or sign up with email
+                <div className="h-px flex-1 bg-neutral-200" />
+              </div>
+            </>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="name">Full name</Label>
