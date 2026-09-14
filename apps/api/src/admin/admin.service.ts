@@ -31,6 +31,21 @@ export class AdminService {
     };
   }
 
+  async listActiveDrivers() {
+    const drivers = await this.prisma.driver.findMany({
+      where: { isOnline: true },
+      include: {
+        user: { omit: { passwordHash: true } },
+        vehicle: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return drivers.map((driver) => ({
+      ...driver,
+      user: decryptUserPhone(driver.user),
+    }));
+  }
+
   async listUsers(role?: UserRole) {
     const users = await this.prisma.user.findMany({
       where: role ? { role } : undefined,

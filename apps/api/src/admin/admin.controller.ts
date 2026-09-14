@@ -41,6 +41,11 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  @Get('drivers/active')
+  listActiveDrivers() {
+    return this.adminService.listActiveDrivers();
+  }
+
   @Get('users')
   listUsers(@Query('role') role?: UserRole) {
     return this.adminService.listUsers(role);
