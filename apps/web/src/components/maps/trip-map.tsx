@@ -31,7 +31,7 @@ export function TripMap({ pickup, destination, driverLocation, height = "300px" 
 
   const pickupIcon = useMemo(() => (isLoaded ? pinIcon("P", "#16a34a") : undefined), [isLoaded]);
   const destinationIcon = useMemo(() => (isLoaded ? pinIcon("D", "#dc2626") : undefined), [isLoaded]);
-  const driverIcon = useMemo(() => (isLoaded ? pinIcon("🚗", "#111827") : undefined), [isLoaded]);
+  const driverIcon = useMemo(() => (isLoaded ? pinIcon("🏍️", "#111827") : undefined), [isLoaded]);
 
   if (!isLoaded) {
     return (

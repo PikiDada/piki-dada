@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Car, Clock, User } from "lucide-react";
+import { Motorbike, Clock, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 
 const ITEMS = [
-  { href: "/passenger", label: "Ride", icon: Car },
+  { href: "/passenger", label: "Ride", icon: Motorbike },
   { href: "/passenger/history", label: "History", icon: Clock },
   { href: "/passenger/profile", label: "Profile", icon: User },
 ];
