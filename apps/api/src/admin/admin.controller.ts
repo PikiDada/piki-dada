@@ -41,6 +41,11 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  @Get('finance')
+  getFinanceSummary() {
+    return this.adminService.getFinanceSummary();
+  }
+
   @Get('drivers/active')
   listActiveDrivers() {
     return this.adminService.listActiveDrivers();

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { decryptUserPhone } from '../common/field-encryption';
+import { PLATFORM_COMMISSION_RATE } from '../trips/trips.service';
 
 @Injectable()
 export class AdminService {
@@ -28,6 +29,78 @@ export class AdminService {
       activeDrivers,
       totalPassengers,
       totalRevenue: revenue._sum.amount ?? 0,
+    };
+  }
+
+  async getFinanceSummary() {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const paidWhere = { status: PaymentStatus.PAID } as const;
+
+    const [
+      allTimePaid,
+      todayPaid,
+      weekPaid,
+      monthPaid,
+      pending,
+      byMethod,
+      walletTotal,
+    ] = await Promise.all([
+      this.prisma.payment.aggregate({ where: paidWhere, _sum: { amount: true }, _count: true }),
+      this.prisma.payment.aggregate({
+        where: { ...paidWhere, createdAt: { gte: startOfToday } },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { ...paidWhere, createdAt: { gte: startOfWeek } },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { ...paidWhere, createdAt: { gte: startOfMonth } },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { status: PaymentStatus.PENDING },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.payment.groupBy({
+        by: ['method'],
+        where: paidWhere,
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.wallet.aggregate({ _sum: { balance: true } }),
+    ]);
+
+    const grossRevenue = allTimePaid._sum.amount ?? 0;
+    // Every paid trip credits the rider's wallet with fare * (1 - commission) regardless of
+    // payment method -- see creditDriverForTrip in payments.service.ts -- so this stays exact
+    // rather than an approximation, without a second query.
+    const platformCommission = Math.round(grossRevenue * PLATFORM_COMMISSION_RATE);
+    const riderPayouts = grossRevenue - platformCommission;
+
+    return {
+      grossRevenue,
+      platformCommission,
+      riderPayouts,
+      paidTripCount: allTimePaid._count,
+      today: todayPaid._sum.amount ?? 0,
+      thisWeek: weekPaid._sum.amount ?? 0,
+      thisMonth: monthPaid._sum.amount ?? 0,
+      pendingAmount: pending._sum.amount ?? 0,
+      pendingCount: pending._count,
+      walletBalanceHeld: walletTotal._sum.balance ?? 0,
+      byMethod: byMethod.map((m) => ({
+        method: m.method,
+        amount: m._sum.amount ?? 0,
+        count: m._count,
+      })),
+      currency: 'UGX',
     };
   }
 
