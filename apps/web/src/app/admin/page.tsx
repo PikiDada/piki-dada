@@ -66,7 +66,13 @@ function money(n: number, currency: string) {
 }
 
 function toDateInput(d: Date) {
-  return d.toISOString().slice(0, 10);
+  // Local calendar date, not toISOString() -- that converts to UTC first, which
+  // silently shifts the date backward a day for any timezone ahead of UTC
+  // (including Kampala, UTC+3), showing e.g. Aug 31 instead of Sep 1 for "this month."
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function preset(kind: "thisYear" | "lastYear" | "thisMonth" | "lastMonth") {
