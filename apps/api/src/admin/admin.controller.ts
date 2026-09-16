@@ -47,6 +47,14 @@ export class AdminController {
     return this.adminService.getFinanceSummary();
   }
 
+  @Get('finance/range')
+  getFinanceForRange(@Query('from') from: string, @Query('to') to: string) {
+    if (!from || !to) {
+      throw new BadRequestException('"from" and "to" query params are required');
+    }
+    return this.adminService.getFinanceForRange(new Date(from), new Date(to));
+  }
+
   @Get('drivers/active')
   listActiveDrivers() {
     return this.adminService.listActiveDrivers();

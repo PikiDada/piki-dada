@@ -111,6 +111,53 @@ export class AdminService {
     };
   }
 
+  async getFinanceForRange(from: Date, to: Date) {
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Invalid date range');
+    }
+    if (from > to) {
+      throw new BadRequestException('"from" must be before "to"');
+    }
+    // "to" is a calendar date picked in a date input -- treat it as end-of-day so the
+    // selected day itself is included, not cut off at midnight.
+    const rangeEnd = new Date(to);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    const paidInRange = {
+      status: PaymentStatus.PAID,
+      createdAt: { gte: from, lte: rangeEnd },
+    } as const;
+
+    const [totals, byMethod, nonCash] = await Promise.all([
+      this.prisma.payment.aggregate({ where: paidInRange, _sum: { amount: true }, _count: true }),
+      this.prisma.payment.groupBy({
+        by: ['method'],
+        where: paidInRange,
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.payment.aggregate({
+        where: { ...paidInRange, method: { not: PaymentMethod.CASH } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const grossRevenue = totals._sum.amount ?? 0;
+    const platformCommission = Math.round(grossRevenue * PLATFORM_COMMISSION_RATE);
+    const riderPayouts = Math.round((nonCash._sum.amount ?? 0) * (1 - PLATFORM_COMMISSION_RATE));
+
+    return {
+      from: from.toISOString(),
+      to: rangeEnd.toISOString(),
+      grossRevenue,
+      platformCommission,
+      riderPayouts,
+      paidTripCount: totals._count,
+      byMethod: byMethod.map((m) => ({ method: m.method, amount: m._sum.amount ?? 0, count: m._count })),
+      currency: 'UGX',
+    };
+  }
+
   async listActiveDrivers() {
     const drivers = await this.prisma.driver.findMany({
       where: { isOnline: true },

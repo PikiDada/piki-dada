@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface Stats {
   totalTrips: number;
@@ -48,18 +52,80 @@ const METHOD_COLORS: Record<string, string> = {
   WALLET: "bg-emerald-500",
 };
 
+interface RangeFinance {
+  grossRevenue: number;
+  platformCommission: number;
+  riderPayouts: number;
+  paidTripCount: number;
+  byMethod: MethodBreakdown[];
+  currency: string;
+}
+
 function money(n: number, currency: string) {
   return `${Math.round(n).toLocaleString()} ${currency}`;
+}
+
+function toDateInput(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function preset(kind: "thisYear" | "lastYear" | "thisMonth" | "lastMonth") {
+  const now = new Date();
+  switch (kind) {
+    case "thisYear":
+      return { from: new Date(now.getFullYear(), 0, 1), to: now };
+    case "lastYear":
+      return { from: new Date(now.getFullYear() - 1, 0, 1), to: new Date(now.getFullYear() - 1, 11, 31) };
+    case "thisMonth":
+      return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: now };
+    case "lastMonth":
+      return {
+        from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+        to: new Date(now.getFullYear(), now.getMonth(), 0),
+      };
+  }
 }
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [finance, setFinance] = useState<Finance | null>(null);
 
+  const [rangeFrom, setRangeFrom] = useState(() => toDateInput(preset("thisMonth").from));
+  const [rangeTo, setRangeTo] = useState(() => toDateInput(preset("thisMonth").to));
+  const [activePreset, setActivePreset] = useState<string>("thisMonth");
+  const [rangeData, setRangeData] = useState<RangeFinance | null>(null);
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
   useEffect(() => {
     apiFetch<Stats>("/admin/stats").then(setStats);
     apiFetch<Finance>("/admin/finance").then(setFinance);
   }, []);
+
+  function loadRange(from: string, to: string) {
+    if (!from || !to) return;
+    setRangeLoading(true);
+    setRangeError(null);
+    apiFetch<RangeFinance>(`/admin/finance/range?from=${from}&to=${to}`)
+      .then(setRangeData)
+      .catch((err) => setRangeError(err instanceof Error ? err.message : "Could not load that range"))
+      .finally(() => setRangeLoading(false));
+  }
+
+  useEffect(() => {
+    loadRange(rangeFrom, rangeTo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyPreset(kind: "thisYear" | "lastYear" | "thisMonth" | "lastMonth") {
+    const { from, to } = preset(kind);
+    const f = toDateInput(from);
+    const t = toDateInput(to);
+    setRangeFrom(f);
+    setRangeTo(t);
+    setActivePreset(kind);
+    loadRange(f, t);
+  }
 
   if (!stats) return <p className="text-neutral-600">Loading...</p>;
 
@@ -158,7 +224,93 @@ export default function AdminDashboardPage() {
 
           <Card className="mt-4">
             <CardContent className="pt-6">
-              <p className="mb-4 text-sm font-medium text-neutral-600">Revenue by payment method</p>
+              <p className="mb-3 text-sm font-medium text-neutral-600">Choose a period</p>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {(["thisMonth", "lastMonth", "thisYear", "lastYear"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => applyPreset(k)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-150",
+                      activePreset === k
+                        ? "border-black bg-black text-white"
+                        : "border-neutral-300 text-neutral-600 hover:border-neutral-400 hover:text-black",
+                    )}
+                  >
+                    {{ thisMonth: "This month", lastMonth: "Last month", thisYear: "This year", lastYear: "Last year" }[k]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mb-4 flex flex-wrap items-end gap-3">
+                <div>
+                  <Label htmlFor="range-from" className="mb-1 block text-xs text-neutral-600">
+                    From
+                  </Label>
+                  <Input
+                    id="range-from"
+                    type="date"
+                    value={rangeFrom}
+                    onChange={(e) => {
+                      setRangeFrom(e.target.value);
+                      setActivePreset("");
+                    }}
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="range-to" className="mb-1 block text-xs text-neutral-600">
+                    To
+                  </Label>
+                  <Input
+                    id="range-to"
+                    type="date"
+                    value={rangeTo}
+                    onChange={(e) => {
+                      setRangeTo(e.target.value);
+                      setActivePreset("");
+                    }}
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => loadRange(rangeFrom, rangeTo)}
+                  disabled={rangeLoading || !rangeFrom || !rangeTo}
+                >
+                  {rangeLoading ? "Loading..." : "Apply"}
+                </Button>
+              </div>
+
+              {rangeError && <p className="mb-3 text-sm text-red-600">{rangeError}</p>}
+
+              {rangeData && (
+                <div className="grid grid-cols-2 gap-3 border-t border-neutral-200 pt-4 lg:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-neutral-600">Commission earned</p>
+                    <p className="font-bold tabular-nums">{money(rangeData.platformCommission, rangeData.currency)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-600">Gross fares</p>
+                    <p className="font-bold tabular-nums">{money(rangeData.grossRevenue, rangeData.currency)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-600">Rider payouts</p>
+                    <p className="font-bold tabular-nums">{money(rangeData.riderPayouts, rangeData.currency)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-600">Paid trips</p>
+                    <p className="font-bold tabular-nums">{rangeData.paidTripCount}</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardContent className="pt-6">
+              <p className="mb-4 text-sm font-medium text-neutral-600">Revenue by payment method (all time)</p>
               {finance.byMethod.length === 0 ? (
                 <p className="text-sm text-neutral-600">No paid trips yet.</p>
               ) : (
