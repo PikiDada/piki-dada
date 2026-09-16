@@ -14,6 +14,12 @@ interface AdminUser {
   emailVerifiedAt: string | null;
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  PASSENGER: "Passenger",
+  DRIVER: "Rider",
+  ADMIN: "Admin",
+};
+
 function Spinner() {
   return (
     <div className="flex items-center gap-2 py-8 text-neutral-600">
@@ -86,7 +92,7 @@ export default function AdminUsersPage() {
             <CardContent className="flex items-center justify-between pt-4">
               <div>
                 <p className="font-medium">
-                  {u.name} <span className="text-xs text-neutral-600">({u.role})</span>
+                  {u.name} <span className="text-xs text-neutral-600">({ROLE_LABELS[u.role] ?? u.role})</span>
                 </p>
                 <p className="text-sm text-neutral-600">{u.email}</p>
               </div>

@@ -10,7 +10,7 @@ import { useAuthStore } from "@/lib/auth-store";
 
 const ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/drivers", label: "Drivers", icon: Car },
+  { href: "/admin/drivers", label: "Riders", icon: Car },
   { href: "/admin/trips", label: "Trips", icon: MapPin },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/pricing", label: "Pricing", icon: DollarSign },

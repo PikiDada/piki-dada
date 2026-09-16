@@ -41,14 +41,14 @@ export default function AdminActiveDriversPage() {
         &larr; Back to dashboard
       </Link>
       <h1 className="mt-3 mb-6 text-2xl font-bold">
-        Active drivers{!loading && ` (${drivers.length})`}
+        Active riders{!loading && ` (${drivers.length})`}
       </h1>
 
       <div className="space-y-3">
         {loading ? (
           <Spinner />
         ) : drivers.length === 0 ? (
-          <p className="text-neutral-600">No drivers are online right now.</p>
+          <p className="text-neutral-600">No riders are online right now.</p>
         ) : (
           drivers.map((d) => (
             <Card key={d.id}>

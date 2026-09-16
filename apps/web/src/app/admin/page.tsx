@@ -25,7 +25,7 @@ export default function AdminDashboardPage() {
   const cards: { label: string; value: string | number; href?: string }[] = [
     { label: "Total trips", value: stats.totalTrips, href: "/admin/trips" },
     { label: "Completed trips", value: stats.completedTrips, href: "/admin/trips" },
-    { label: "Active drivers", value: stats.activeDrivers, href: "/admin/drivers/active" },
+    { label: "Active riders", value: stats.activeDrivers, href: "/admin/drivers/active" },
     { label: "Total passengers", value: stats.totalPassengers, href: "/admin/users" },
     { label: "Total revenue (UGX)", value: stats.totalRevenue.toLocaleString() },
   ];

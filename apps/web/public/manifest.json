@@ -34,7 +34,7 @@
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Driver dashboard",
+      "name": "Rider dashboard",
       "url": "/driver",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }

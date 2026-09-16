@@ -240,7 +240,7 @@ export default function RegisterPage() {
                     : "border-neutral-300 hover:border-[#F4C12C] hover:bg-yellow-100 hover:scale-[1.08]",
                 )}
               >
-                {r === "PASSENGER" ? "Ride" : "Drive"}
+                {r === "PASSENGER" ? "Passenger" : "Rider"}
               </button>
             ))}
           </div>

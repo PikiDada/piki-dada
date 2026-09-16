@@ -130,9 +130,9 @@ export default function AdminDriversPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Pending driver approvals</h1>
+      <h1 className="mb-6 text-2xl font-bold">Pending rider approvals</h1>
       <div className="space-y-3">
-        {loading ? <Spinner /> : drivers.length === 0 && <p className="text-neutral-600">No pending drivers.</p>}
+        {loading ? <Spinner /> : drivers.length === 0 && <p className="text-neutral-600">No pending riders.</p>}
         {drivers.map((d) => (
           <Card key={d.id}>
             <CardContent className="flex items-center justify-between pt-4">

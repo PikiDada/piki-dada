@@ -13,9 +13,9 @@ import { SOCKET_EVENTS, type LatLng, type Trip } from "@/lib/types";
 const CANCELLABLE_STATUSES = ["SEARCHING", "ACCEPTED", "ARRIVED"];
 
 const STATUS_LABEL: Record<string, string> = {
-  SEARCHING: "Looking for a driver nearby...",
-  ACCEPTED: "Driver is on the way",
-  ARRIVED: "Driver has arrived",
+  SEARCHING: "Looking for a rider nearby...",
+  ACCEPTED: "Rider is on the way",
+  ARRIVED: "Rider has arrived",
   IN_PROGRESS: "Trip in progress",
   COMPLETED: "Trip completed",
   CANCELLED: "Trip cancelled",
@@ -125,7 +125,7 @@ export default function PassengerTripPage() {
               {trip.driver.user?.phone && (
                 <a href={`tel:${trip.driver.user.phone}`} className="mt-2 inline-block">
                   <Button size="sm" variant="outline">
-                    Call driver
+                    Call rider
                   </Button>
                 </a>
               )}

@@ -41,7 +41,7 @@ export default function DriverDashboardPage() {
         setLoadError(
           err instanceof Error
             ? err.message
-            : "Could not load your driver profile. The server may be waking up — please retry.",
+            : "Could not load your rider profile. The server may be waking up — please retry.",
         );
       });
   }, []);

@@ -15,7 +15,7 @@ export class DriversService {
   private async getDriverByUserId(userId: string) {
     const driver = await this.prisma.driver.findUnique({ where: { userId } });
     if (!driver) {
-      throw new NotFoundException('Driver profile not found');
+      throw new NotFoundException('Rider profile not found');
     }
     return driver;
   }
@@ -48,7 +48,7 @@ export class DriversService {
   async setAvailability(userId: string, isOnline: boolean) {
     const driver = await this.getDriverByUserId(userId);
     if (isOnline && driver.approvalStatus !== DriverApprovalStatus.APPROVED) {
-      throw new BadRequestException('Driver must be approved before going online');
+      throw new BadRequestException('Rider must be approved before going online');
     }
     return this.prisma.driver.update({ where: { id: driver.id }, data: { isOnline } });
   }
@@ -78,10 +78,10 @@ export class DriversService {
       include: { vehicle: true },
     });
     if (!driver) {
-      throw new NotFoundException('Driver not found');
+      throw new NotFoundException('Rider not found');
     }
     if (status === DriverApprovalStatus.APPROVED && !driver.vehicle) {
-      throw new BadRequestException('Driver must have a vehicle on file before approval');
+      throw new BadRequestException('Rider must have a vehicle on file before approval');
     }
     const updated = await this.prisma.driver.update({
       where: { id: driverId },
@@ -92,7 +92,7 @@ export class DriversService {
       status === DriverApprovalStatus.APPROVED ? 'Application approved' : 'Application rejected',
       status === DriverApprovalStatus.APPROVED
         ? 'You can now go online and start accepting rides.'
-        : 'Your driver application was rejected. Contact support for details.',
+        : 'Your rider application was rejected. Contact support for details.',
     );
     return updated;
   }

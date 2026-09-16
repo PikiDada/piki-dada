@@ -95,7 +95,7 @@ export class TripsService {
 
   async acceptTrip(driverUserId: string, tripId: string) {
     const driver = await this.prisma.driver.findUnique({ where: { userId: driverUserId } });
-    if (!driver) throw new NotFoundException('Driver not found');
+    if (!driver) throw new NotFoundException('Rider not found');
 
     // The where clause's status check makes this update atomic at the DB level:
     // if two drivers race, only the first UPDATE...WHERE status='SEARCHING' matches a row.
@@ -117,8 +117,8 @@ export class TripsService {
     this.gateway.emitToUser(updated.passengerId, SOCKET_EVENTS.TRIP_ACCEPTED, updated);
     this.notifications.notifyUser(
       updated.passengerId,
-      'Driver on the way',
-      `${updated.driver?.user?.name ?? 'Your driver'} accepted your ride request.`,
+      'Rider on the way',
+      `${updated.driver?.user?.name ?? 'Your rider'} accepted your ride request.`,
     );
     return updated;
   }
