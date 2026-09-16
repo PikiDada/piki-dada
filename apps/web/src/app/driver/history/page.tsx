@@ -75,10 +75,17 @@ export default function DriverHistoryPage() {
         <Card className="mb-4">
           <CardContent className="flex items-center justify-between pt-4">
             <div>
-              <p className="text-xs text-neutral-600">Wallet balance</p>
-              <p className="text-2xl font-bold">
-                {wallet.balance.toLocaleString()} {wallet.currency}
+              <p className="text-xs text-neutral-600">
+                {wallet.balance < 0 ? "You owe (cash trip commission)" : "Wallet balance"}
               </p>
+              <p className={`text-2xl font-bold ${wallet.balance < 0 ? "text-red-600" : ""}`}>
+                {Math.abs(wallet.balance).toLocaleString()} {wallet.currency}
+              </p>
+              {wallet.balance < 0 && (
+                <p className="mt-1 text-xs text-neutral-600">
+                  Owed to Piki Dada for cash trips you were paid for directly
+                </p>
+              )}
             </div>
             <Button disabled={wallet.balance <= 0 || withdrawing} onClick={handleWithdraw}>
               {withdrawing ? "Processing..." : "Withdraw"}

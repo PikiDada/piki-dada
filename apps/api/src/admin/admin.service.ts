@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PaymentStatus, TripStatus, UserRole } from '@prisma/client';
+import { PaymentMethod, PaymentStatus, TripStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
@@ -49,6 +49,7 @@ export class AdminService {
       pending,
       byMethod,
       walletTotal,
+      nonCashPaid,
     ] = await Promise.all([
       this.prisma.payment.aggregate({ where: paidWhere, _sum: { amount: true }, _count: true }),
       this.prisma.payment.aggregate({
@@ -75,14 +76,20 @@ export class AdminService {
         _count: true,
       }),
       this.prisma.wallet.aggregate({ _sum: { balance: true } }),
+      // Cash trips never move money through the platform -- the rider collects the fare
+      // directly and instead owes commission as a wallet debit (see creditDriverForTrip) --
+      // so only non-cash trips actually get credited a payout. Commission itself is still
+      // owed on every paid trip regardless of method, so it derives from the full total.
+      this.prisma.payment.aggregate({
+        where: { ...paidWhere, method: { not: PaymentMethod.CASH } },
+        _sum: { amount: true },
+      }),
     ]);
 
     const grossRevenue = allTimePaid._sum.amount ?? 0;
-    // Every paid trip credits the rider's wallet with fare * (1 - commission) regardless of
-    // payment method -- see creditDriverForTrip in payments.service.ts -- so this stays exact
-    // rather than an approximation, without a second query.
     const platformCommission = Math.round(grossRevenue * PLATFORM_COMMISSION_RATE);
-    const riderPayouts = grossRevenue - platformCommission;
+    const nonCashRevenue = nonCashPaid._sum.amount ?? 0;
+    const riderPayouts = Math.round(nonCashRevenue * (1 - PLATFORM_COMMISSION_RATE));
 
     return {
       grossRevenue,

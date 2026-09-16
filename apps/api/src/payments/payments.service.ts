@@ -101,7 +101,28 @@ export class PaymentsService {
     });
     if (!trip?.driverId || !trip.driver) return;
 
-    const driverEarnings = Math.round((trip.fare ?? 0) * (1 - PLATFORM_COMMISSION_RATE));
+    const fare = trip.fare ?? 0;
+    const commission = Math.round(fare * PLATFORM_COMMISSION_RATE);
+
+    if (trip.paymentMethod === PaymentMethod.CASH) {
+      // Cash trips: the rider already collected the full fare directly from the
+      // passenger, so the platform never held any of this money -- crediting 85%
+      // on top would pay the rider twice. What's actually owed runs the other
+      // way: the rider owes the platform its commission. Record that as a debit
+      // rather than paying out money that was never collected.
+      await this.prisma.wallet.update({
+        where: { userId: trip.driver.userId },
+        data: {
+          balance: { decrement: commission },
+          ledgerEntries: {
+            create: { amount: -commission, reason: `Trip ${tripId} commission owed (cash)` },
+          },
+        },
+      });
+      return;
+    }
+
+    const driverEarnings = fare - commission;
     await this.prisma.wallet.update({
       where: { userId: trip.driver.userId },
       data: {

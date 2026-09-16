@@ -121,7 +121,9 @@ export default function AdminDashboardPage() {
               <CardContent className="pt-6">
                 <p className="text-sm text-neutral-600">Rider payouts (85%)</p>
                 <p className="text-2xl font-bold tabular-nums">{money(finance.riderPayouts, finance.currency)}</p>
-                <p className="mt-1 text-xs text-neutral-600">credited to rider wallets</p>
+                <p className="mt-1 text-xs text-neutral-600">
+                  credited to wallets &mdash; cash trips excluded, riders keep that fare directly
+                </p>
               </CardContent>
             </Card>
             <Card>
