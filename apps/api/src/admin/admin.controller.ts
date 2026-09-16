@@ -23,6 +23,7 @@ import { AdminService } from './admin.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { BroadcastPushDto } from './dto/broadcast-push.dto';
+import { SettleRiderDebtDto } from './dto/settle-rider-debt.dto';
 import { PushService } from '../push/push.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
@@ -49,6 +50,22 @@ export class AdminController {
   @Get('drivers/active')
   listActiveDrivers() {
     return this.adminService.listActiveDrivers();
+  }
+
+  @Get('drivers/wallets')
+  listRiderWallets() {
+    return this.adminService.listRiderWallets();
+  }
+
+  @Patch('drivers/:id/wallet/settle')
+  async settleRiderDebt(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+    @Body() dto: SettleRiderDebtDto,
+  ) {
+    const result = await this.adminService.settleRiderDebt(id, dto.amount, dto.note);
+    await this.auditLog.log(admin.id, 'rider.wallet.settle', { type: 'Driver', id }, { ...dto });
+    return result;
   }
 
   @Get('users')

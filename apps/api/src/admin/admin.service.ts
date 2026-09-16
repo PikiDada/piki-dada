@@ -126,6 +126,47 @@ export class AdminService {
     }));
   }
 
+  async listRiderWallets() {
+    const drivers = await this.prisma.driver.findMany({
+      include: {
+        user: { include: { wallet: true }, omit: { passwordHash: true } },
+      },
+      // Most-owed first, so whoever needs collecting from soonest is at the top.
+      orderBy: { user: { wallet: { balance: 'asc' } } },
+    });
+    return drivers
+      .filter((driver) => driver.user.wallet)
+      .map((driver) => ({
+        driverId: driver.id,
+        balance: driver.user.wallet!.balance,
+        currency: driver.user.wallet!.currency,
+        user: decryptUserPhone(driver.user),
+      }));
+  }
+
+  async settleRiderDebt(driverId: string, amount: number, note: string | undefined) {
+    if (amount <= 0) {
+      throw new BadRequestException('Settlement amount must be positive');
+    }
+    const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
+    if (!driver) throw new NotFoundException('Rider not found');
+
+    return this.prisma.wallet.update({
+      where: { userId: driver.userId },
+      data: {
+        balance: { increment: amount },
+        ledgerEntries: {
+          create: {
+            amount,
+            reason: note
+              ? `Cash settlement recorded by admin: ${note}`
+              : 'Cash settlement recorded by admin',
+          },
+        },
+      },
+    });
+  }
+
   async listUsers(role?: UserRole) {
     const users = await this.prisma.user.findMany({
       where: role ? { role } : undefined,

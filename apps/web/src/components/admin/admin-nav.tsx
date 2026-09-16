@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Motorbike, MapPin, Tag, DollarSign, Megaphone } from "lucide-react";
+import { LayoutDashboard, Users, Motorbike, MapPin, Tag, DollarSign, Megaphone, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
@@ -11,6 +11,7 @@ import { useAuthStore } from "@/lib/auth-store";
 const ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/drivers", label: "Riders", icon: Motorbike },
+  { href: "/admin/drivers/wallets", label: "Payouts", icon: Wallet },
   { href: "/admin/trips", label: "Trips", icon: MapPin },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/pricing", label: "Pricing", icon: DollarSign },
