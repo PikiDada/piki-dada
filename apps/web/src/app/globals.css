@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbfaf8;
+  --foreground: #16140f;
+  --brand: #f4c12c;
+  --brand-ink: #14120e;
   color-scheme: light;
 }
 
@@ -13,8 +15,55 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@theme {
+  /* Warm-tinted neutrals rather than Tailwind's pure grays. The app is built
+     almost entirely on neutral-*, so tinting the scale here warms every surface
+     at once and stops the UI reading as an untouched default template. The warmth
+     also sits correctly next to the brand yellow, which pure gray fights. */
+  --color-neutral-50: #faf9f6;
+  --color-neutral-100: #f4f1ea;
+  --color-neutral-200: #e7e3d9;
+  --color-neutral-300: #d4cec0;
+  --color-neutral-400: #a8a193;
+  --color-neutral-500: #7d7668;
+  --color-neutral-600: #5c564a;
+  --color-neutral-700: #443f36;
+  --color-neutral-800: #2a2721;
+  --color-neutral-900: #1a1813;
+  --color-neutral-950: #0f0e0a;
+
+  --color-brand: #f4c12c;
+  --color-brand-soft: #fdf3d6;
+
+  /* Layered, low-opacity shadows read as depth; a single hard shadow reads as cheap. */
+  --shadow-card: 0 1px 2px rgb(22 20 15 / 0.04), 0 2px 8px rgb(22 20 15 / 0.04);
+  --shadow-lift: 0 2px 4px rgb(22 20 15 / 0.05), 0 10px 26px rgb(22 20 15 / 0.09);
+  --shadow-brand: 0 4px 16px rgb(244 193 44 / 0.35);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Geist is loaded in layout.tsx but was previously overridden here by a
+     hardcoded Arial stack, so none of it ever reached the page. */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings carry the weight of the interface -- tighten them so they read as
+   deliberate typography rather than default browser sizing. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.021em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -4,14 +4,25 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-all duration-150 hover:scale-[1.08] active:scale-[0.92] disabled:pointer-events-none disabled:opacity-50",
+  // Restrained motion: a small press and a shadow shift read as confident, where the
+  // previous 8% hover/active scale read as a toy. Focus ring is visible for keyboard
+  // users without following every mouse click.
+  // Disabled is styled per variant rather than by dimming with opacity: a 45%-opacity
+  // black pill reads as a heavy grey slab that dominates the screen it sits on.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-all duration-200 ease-out active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50 disabled:pointer-events-none disabled:translate-y-0 disabled:shadow-none",
   {
     variants: {
       variant: {
-        default: "bg-black text-white hover:bg-[#F4C12C] hover:text-black hover:shadow-lg",
-        outline: "border border-neutral-300 bg-white hover:border-[#F4C12C] hover:bg-yellow-50 hover:shadow-md",
-        ghost: "hover:bg-neutral-100",
-        destructive: "bg-red-600 text-white hover:bg-red-700",
+        default:
+          "bg-neutral-900 text-white shadow-card hover:-translate-y-px hover:bg-neutral-800 hover:shadow-lift disabled:bg-neutral-200 disabled:text-neutral-400",
+        brand:
+          "bg-brand text-neutral-900 shadow-card hover:-translate-y-px hover:brightness-[1.04] hover:shadow-brand disabled:bg-neutral-200 disabled:text-neutral-400",
+        outline:
+          "border border-neutral-300 bg-white text-neutral-900 shadow-card hover:border-neutral-400 hover:bg-neutral-50 hover:shadow-lift disabled:border-neutral-200 disabled:bg-neutral-50 disabled:text-neutral-400",
+        ghost:
+          "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 disabled:text-neutral-400",
+        destructive:
+          "bg-red-600 text-white shadow-card hover:-translate-y-px hover:bg-red-700 hover:shadow-lift disabled:bg-neutral-200 disabled:text-neutral-400",
       },
       size: {
         default: "h-11 px-6",

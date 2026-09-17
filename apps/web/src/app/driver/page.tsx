@@ -173,12 +173,12 @@ export default function DriverDashboardPage() {
       )}
 
       {profile.approvalStatus === "PENDING" && (
-        <div className="mb-4 rounded-xl bg-yellow-50 p-3 text-sm text-yellow-800">
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900">
           Your account is pending admin approval. We will review your application and notify you once it is approved.
         </div>
       )}
       {profile.approvalStatus === "REJECTED" && (
-        <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
           Your application was rejected. Contact support for details.
         </div>
       )}

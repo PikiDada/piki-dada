@@ -220,24 +220,44 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-4 py-10">
-      <Image src="/brand/pikidada_logo4.png" alt="Piki Dada" width={180} height={58} />
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Create your account</CardTitle>
+    <div className="relative flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden bg-neutral-50 px-4 py-10">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-24 left-1/2 h-64 w-72 -translate-x-1/2 rounded-full bg-brand/15 blur-3xl"
+      />
+      <Image
+        src="/brand/pikidada_logo4.png"
+        alt="Piki Dada"
+        width={180}
+        height={58}
+        className="relative"
+      />
+      <Card className="relative w-full max-w-sm shadow-lift">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-2xl">Create your account</CardTitle>
+          <p className="mt-1 text-sm text-neutral-600">
+            Tell us how you&apos;ll be using Piki Dada.
+          </p>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 grid grid-cols-2 gap-2">
+          {/* A segmented control on a single track, rather than two loose buttons --
+              it makes clear these are two sides of one choice. */}
+          <div
+            role="group"
+            aria-label="Account type"
+            className="mb-5 grid grid-cols-2 gap-1 rounded-full bg-neutral-100 p-1"
+          >
             {(["PASSENGER", "DRIVER"] as UserRole[]).map((r) => (
               <button
                 key={r}
                 type="button"
+                aria-pressed={role === r}
                 onClick={() => setRole(r)}
                 className={cn(
-                  "rounded-xl border px-3 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.96]",
+                  "rounded-full px-3 py-2 text-sm font-semibold transition-all duration-200 ease-out",
                   role === r
-                    ? "border-[#F4C12C] bg-[#F4C12C] text-black shadow-md"
-                    : "border-neutral-300 hover:border-[#F4C12C] hover:bg-yellow-100 hover:scale-[1.08]",
+                    ? "bg-neutral-900 text-white shadow-card"
+                    : "text-neutral-600 hover:text-neutral-900",
                 )}
               >
                 {r === "PASSENGER" ? "Passenger" : "Rider"}
@@ -251,9 +271,11 @@ export default function RegisterPage() {
                   Continue with Google
                 </Button>
               </a>
-              <div className="mb-4 flex items-center gap-3 text-xs text-neutral-600">
+              <div className="mb-5 flex items-center gap-3">
                 <div className="h-px flex-1 bg-neutral-200" />
-                or sign up with email
+                <span className="text-xs font-medium uppercase tracking-wider text-neutral-500">
+                  or sign up with email
+                </span>
                 <div className="h-px flex-1 bg-neutral-200" />
               </div>
             </>
@@ -363,7 +385,7 @@ export default function RegisterPage() {
                               "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-4 text-center transition-colors duration-150",
                               file
                                 ? "border-green-500 bg-green-50 text-green-700"
-                                : "border-neutral-300 bg-neutral-50 text-neutral-600 hover:border-[#F4C12C] hover:bg-yellow-50 hover:text-neutral-700",
+                                : "border-neutral-300 bg-neutral-50 text-neutral-600 hover:border-brand hover:bg-brand-soft hover:text-neutral-800",
                             )}
                           >
                             {file ? (
@@ -496,9 +518,12 @@ export default function RegisterPage() {
                 : "Create account"}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-neutral-600">
+          <p className="mt-6 border-t border-neutral-200 pt-5 text-center text-sm text-neutral-600">
             Already have an account?{" "}
-            <Link href="/login" className="font-medium text-black underline">
+            <Link
+              href="/login"
+              className="font-medium text-neutral-900 underline underline-offset-2 hover:text-neutral-700"
+            >
               Sign in
             </Link>
           </p>

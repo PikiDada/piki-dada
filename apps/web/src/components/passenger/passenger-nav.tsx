@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Motorbike, Clock, User } from "lucide-react";
+import { Motorbike, Clock, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
@@ -19,29 +19,36 @@ export function PassengerNav() {
   const clearSession = useAuthStore((s) => s.clearSession);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 flex justify-around border-t border-neutral-200 bg-white py-2">
+    // Translucent + blurred so content scrolling underneath stays faintly visible,
+    // and padded for the iOS home indicator so the labels aren't half-covered.
+    <nav className="fixed bottom-0 left-0 right-0 z-20 flex justify-around border-t border-neutral-200/80 bg-white/85 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-lg">
       {ITEMS.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}
+          aria-current={pathname === href ? "page" : undefined}
           className={cn(
-            "relative flex flex-col items-center gap-1 px-4 py-1 text-xs",
-            pathname === href ? "text-black" : "text-neutral-600",
+            "relative flex w-16 flex-col items-center gap-1 py-1 text-[11px] font-medium transition-colors",
+            pathname === href ? "text-neutral-900" : "text-neutral-500 hover:text-neutral-800",
           )}
         >
-          {pathname === href && <span className="absolute -top-2 h-1 w-6 rounded-full bg-[#F4C12C]" />}
-          <Icon size={20} />
+          {pathname === href && (
+            <span className="absolute -top-2 h-1 w-8 rounded-full bg-brand" aria-hidden />
+          )}
+          <Icon size={20} strokeWidth={pathname === href ? 2.4 : 1.9} />
           {label}
         </Link>
       ))}
+      {/* Carries an icon like its siblings so all four labels sit on one baseline. */}
       <button
         onClick={async () => {
           await apiFetch("/auth/logout", { method: "POST" }).catch(() => undefined);
           clearSession();
           router.push("/login");
         }}
-        className="flex flex-col items-center gap-1 px-4 py-1 text-xs text-neutral-600 transition-all duration-150 hover:scale-[1.08] active:scale-[0.92] hover:text-neutral-700"
+        className="flex w-16 flex-col items-center gap-1 py-1 text-[11px] font-medium text-neutral-500 transition-colors hover:text-neutral-800"
       >
+        <LogOut size={20} strokeWidth={1.9} />
         Logout
       </button>
     </nav>

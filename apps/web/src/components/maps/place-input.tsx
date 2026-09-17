@@ -95,7 +95,7 @@ export function PlaceInput({ placeholder, value, onChange, onSelect }: PlaceInpu
         <button
           type="button"
           onClick={() => setManualMode(true)}
-          className="text-xs text-neutral-600 underline hover:text-neutral-800"
+          className="text-xs text-neutral-500 transition-colors hover:text-neutral-800 hover:underline"
         >
           Can&apos;t find it? Enter coordinates manually
         </button>

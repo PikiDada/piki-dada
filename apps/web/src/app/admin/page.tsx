@@ -175,7 +175,10 @@ export default function AdminDashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Card className="border-2 border-[#F4C12C]">
+            {/* The headline number: a brand top rule and tinted ground mark it out
+                without the heavy 2px cage that surrounded it before. */}
+            <Card className="overflow-hidden border-brand/40 bg-brand-soft/40">
+              <div className="h-1 w-full bg-brand" aria-hidden />
               <CardContent className="pt-6">
                 <p className="text-sm text-neutral-600">Platform commission (15%)</p>
                 <p className="text-2xl font-bold tabular-nums">{money(finance.platformCommission, finance.currency)}</p>

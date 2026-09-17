@@ -58,11 +58,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-4">
-      <Image src="/brand/pikidada_logo4.png" alt="Piki Dada" width={180} height={58} />
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Welcome back</CardTitle>
+    <div className="relative flex min-h-screen flex-col items-center justify-center gap-7 overflow-hidden bg-neutral-50 px-4 py-10">
+      {/* Soft brand wash behind the card so the page reads as branded space rather
+          than a form floating on flat grey. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-24 left-1/2 h-64 w-72 -translate-x-1/2 rounded-full bg-brand/15 blur-3xl"
+      />
+      <Image
+        src="/brand/pikidada_logo4.png"
+        alt="Piki Dada"
+        width={180}
+        height={58}
+        className="relative"
+        priority
+      />
+      <Card className="relative w-full max-w-sm shadow-lift">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-2xl">Welcome back</CardTitle>
+          <p className="mt-1 text-sm text-neutral-600">Sign in to book your next ride.</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -106,23 +120,36 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
-          <a href={apiUrl("/auth/google")} className="mt-3 block">
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-neutral-200" />
+            <span className="text-xs font-medium uppercase tracking-wider text-neutral-500">or</span>
+            <div className="h-px flex-1 bg-neutral-200" />
+          </div>
+          <a href={apiUrl("/auth/google")} className="block">
             <Button variant="outline" className="w-full" type="button">
               Continue with Google
             </Button>
           </a>
-          <p className="mt-4 text-center text-sm text-neutral-600">
-            Can&apos;t sign in?{" "}
-            <Link href="/forgot-password" className="font-medium text-black underline">
-              Reset your password
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-sm text-neutral-600">
-            No account?{" "}
-            <Link href="/register" className="font-medium text-black underline">
-              Sign up
-            </Link>
-          </p>
+          <div className="mt-6 space-y-1.5 border-t border-neutral-200 pt-5 text-center text-sm text-neutral-600">
+            <p>
+              Can&apos;t sign in?{" "}
+              <Link
+                href="/forgot-password"
+                className="font-medium text-neutral-900 underline underline-offset-2 hover:text-neutral-700"
+              >
+                Reset your password
+              </Link>
+            </p>
+            <p>
+              No account?{" "}
+              <Link
+                href="/register"
+                className="font-medium text-neutral-900 underline underline-offset-2 hover:text-neutral-700"
+              >
+                Sign up
+              </Link>
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>
