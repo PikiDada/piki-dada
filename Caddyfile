@@ -1,0 +1,18 @@
+# Caddy gets TLS certs automatically (Let's Encrypt) for each domain below the moment DNS
+# points at this server and ports 80/443 are reachable from the internet — no cert config
+# needed here.
+
+pikidada.com, www.pikidada.com {
+	reverse_proxy web:3000
+}
+
+api.pikidada.com {
+	reverse_proxy api:4001
+}
+
+# Public read access for driver-document images the admin UI loads directly as <img src>
+# (see uploads.service.ts / MINIO_PUBLIC_URL). Requires a new DNS A record for this
+# subdomain pointed at the server, in addition to the two above.
+files.pikidada.com {
+	reverse_proxy minio:9000
+}

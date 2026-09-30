@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
@@ -155,6 +156,9 @@ export default function AdminUsersPage() {
                 <p className="text-sm text-neutral-600">{u.email}</p>
               </div>
               <div className="flex gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <Link href={`/admin/users/${u.id}`}>View details</Link>
+                </Button>
                 {u.role !== "ADMIN" && (
                   <Button
                     size="sm"

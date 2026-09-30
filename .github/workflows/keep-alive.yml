@@ -9,5 +9,10 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      # Was pointed at piki-dada-api-xgen.onrender.com, a stale/mismatched hostname --
+      # api.pikidada.com's actual DNS resolves to piki-dada-api.onrender.com (no "-xgen"),
+      # so this ping has likely been missing the real service the whole time, leaving it to
+      # cold-start on the next real request. Pinging the production domain itself instead
+      # keeps this correct even if the underlying Render service is ever renamed again.
       - name: Ping /health
-        run: curl -sf --max-time 180 --retry 3 --retry-all-errors https://piki-dada-api-xgen.onrender.com/health
+        run: curl -sf --max-time 180 --retry 3 --retry-all-errors https://api.pikidada.com/health

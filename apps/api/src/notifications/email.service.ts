@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import sgMail from '@sendgrid/mail';
+import nodemailer, { type Transporter } from 'nodemailer';
 
 function escapeHtml(value: string) {
   return value
@@ -15,31 +15,69 @@ export class EmailService {
   private fromAddress: string;
   private webUrl: string;
   private enabled: boolean;
+  private transporter: Transporter | null = null;
 
   constructor(private config: ConfigService) {
-    const apiKey = this.config.get<string>('SENDGRID_API_KEY');
-    if (apiKey) {
-      sgMail.setApiKey(apiKey);
+    const host = this.config.get<string>('SMTP_HOST');
+    if (host) {
+      this.transporter = nodemailer.createTransport({
+        host,
+        port: this.config.get<number>('SMTP_PORT') ?? 587,
+        // The self-hosted Postfix container is outbound-only and reached over the private
+        // Docker network, so there's no TLS cert to verify -- secure/STARTTLS aren't relevant
+        // the way they would be for an external relay like Brevo or SendGrid's SMTP endpoint.
+        secure: false,
+        auth:
+          this.config.get<string>('SMTP_USER') &&
+          this.config.get<string>('SMTP_PASSWORD')
+            ? {
+                user: this.config.get<string>('SMTP_USER'),
+                pass: this.config.get<string>('SMTP_PASSWORD'),
+              }
+            : undefined,
+      });
       this.enabled = true;
     } else {
       this.enabled = false;
-      console.warn('[EmailService] SENDGRID_API_KEY not configured — email is disabled');
+      console.warn(
+        '[EmailService] SMTP_HOST not configured — email is disabled',
+      );
     }
-    this.fromAddress = this.config.get<string>('SMTP_FROM_EMAIL') || 'noreply@pikidada.com';
+    this.fromAddress =
+      this.config.get<string>('SMTP_FROM_EMAIL') || 'noreply@pikidada.com';
     this.webUrl = this.config.getOrThrow<string>('CORS_ORIGIN');
   }
 
   async send(to: string, subject: string, html: string) {
-    if (!this.enabled) {
-      console.warn('[EmailService] Email disabled (no API key). Would have sent:', subject, 'to', to);
+    if (!this.enabled || !this.transporter) {
+      console.warn(
+        '[EmailService] Email disabled (no SMTP_HOST). Would have sent:',
+        subject,
+        'to',
+        to,
+      );
       return;
     }
     try {
-      console.log(`[EmailService] Sending email to ${to} with subject: ${subject}`);
-      await sgMail.send({ from: this.fromAddress, to, subject, html });
+      console.log(
+        `[EmailService] Sending email to ${to} with subject: ${subject}`,
+      );
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+      });
       console.log(`[EmailService] Email sent successfully to ${to}`);
     } catch (err) {
-      console.error('[EmailService] Failed to send email to', to, 'subject:', subject, 'error:', err);
+      console.error(
+        '[EmailService] Failed to send email to',
+        to,
+        'subject:',
+        subject,
+        'error:',
+        err,
+      );
     }
   }
 

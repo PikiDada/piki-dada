@@ -1,0 +1,119 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pikidada}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot: creates the driver-documents bucket and makes it anonymously readable, since
+  # uploads.service.ts hands back plain (unsigned) URLs that the admin UI loads directly as
+  # <img src>. Runs once per `docker compose up` and exits; safe to re-run (mc mb -p / repeat
+  # anonymous-set are both idempotent).
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb -p local/${MINIO_BUCKET:-driver-documents} &&
+      mc anonymous set download local/${MINIO_BUCKET:-driver-documents}
+      "
+
+  # Outbound-only mail relay (boky/postfix — https://github.com/bokysan/docker-postfix).
+  # Verify current env var names against that project's README before changing anything here;
+  # confirmed against its docs as of this setup: ALLOWED_SENDER_DOMAINS, DKIM_BACKEND,
+  # DKIM_AUTOGENERATE, DKIM_SELECTOR, POSTFIX_myhostname. Listens on submission port 587 only
+  # (port 25 isn't exposed by this image); trusts the Docker bridge network by default via
+  # POSTFIX_mynetworks, so the api container needs no SMTP auth credentials.
+  postfix:
+    image: boky/postfix:latest
+    restart: unless-stopped
+    hostname: mail.pikidada.com
+    environment:
+      ALLOWED_SENDER_DOMAINS: pikidada.com
+      POSTFIX_myhostname: mail.pikidada.com
+      DKIM_BACKEND: opendkim
+      DKIM_AUTOGENERATE: "true"
+      DKIM_SELECTOR: mail
+    volumes:
+      - postfix_dkim:/etc/opendkim/keys
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      postfix:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+      - minio
+
+volumes:
+  postgres_data:
+  minio_data:
+  postfix_dkim:
+  caddy_data:
+  caddy_config:
