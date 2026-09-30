@@ -15,6 +15,9 @@ import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateDeliveryCategoryDto } from './dto/create-delivery-category.dto';
 import { UpdateDeliveryCategoryDto } from './dto/update-delivery-category.dto';
+import { CreateDeliverySizeTierDto } from './dto/create-delivery-size-tier.dto';
+import { UpdateDeliverySizeTierDto } from './dto/update-delivery-size-tier.dto';
+import { UpdateDeliverySurchargeDto } from './dto/update-delivery-surcharge.dto';
 import { decryptUserPhone } from '../common/field-encryption';
 import { PLATFORM_COMMISSION_RATE } from '../trips/trips.service';
 
@@ -433,11 +436,52 @@ export class AdminService {
     return this.prisma.deliveryCategory.update({ where: { id }, data: dto });
   }
 
+  // Superseded by delivery size tiers below -- kept callable (unused by the admin UI now) so
+  // no functionality is destroyed, just no longer surfaced.
   upsertDeliveryPricingRule(categoryId: string, dto: UpsertPricingRuleDto) {
     return this.prisma.deliveryPricingRule.upsert({
       where: { categoryId },
       update: dto,
       create: { categoryId, ...dto },
+    });
+  }
+
+  listDeliverySizeTiers() {
+    return this.prisma.deliverySizeTier.findMany({
+      orderBy: { sortOrder: 'asc' },
+      include: { pricingRule: true },
+    });
+  }
+
+  createDeliverySizeTier(dto: CreateDeliverySizeTierDto) {
+    return this.prisma.deliverySizeTier.create({ data: dto });
+  }
+
+  updateDeliverySizeTier(id: string, dto: UpdateDeliverySizeTierDto) {
+    return this.prisma.deliverySizeTier.update({ where: { id }, data: dto });
+  }
+
+  upsertDeliverySizeTierPricingRule(
+    sizeTierId: string,
+    dto: UpsertPricingRuleDto,
+  ) {
+    return this.prisma.deliverySizeTierPricingRule.upsert({
+      where: { sizeTierId },
+      update: dto,
+      create: { sizeTierId, ...dto },
+    });
+  }
+
+  listDeliverySurcharges() {
+    return this.prisma.deliverySurchargeRule.findMany({
+      orderBy: { key: 'asc' },
+    });
+  }
+
+  updateDeliverySurcharge(key: string, dto: UpdateDeliverySurchargeDto) {
+    return this.prisma.deliverySurchargeRule.update({
+      where: { key },
+      data: dto,
     });
   }
 

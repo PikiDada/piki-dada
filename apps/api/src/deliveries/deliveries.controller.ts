@@ -31,10 +31,15 @@ export class DeliveriesController {
     private uploadsService: UploadsService,
   ) {}
 
-  // Must come before ':id' below, or 'categories' would be parsed as an id.
+  // Must come before ':id' below, or 'categories'/'size-tiers' would be parsed as an id.
   @Get('categories')
   listCategories() {
     return this.deliveriesService.listCategories();
+  }
+
+  @Get('size-tiers')
+  listSizeTiers() {
+    return this.deliveriesService.listSizeTiers();
   }
 
   // Separate from request() so the photo lands in storage (and gets a URL) before the

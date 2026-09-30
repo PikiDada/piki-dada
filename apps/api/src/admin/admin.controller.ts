@@ -24,6 +24,9 @@ import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateDeliveryCategoryDto } from './dto/create-delivery-category.dto';
 import { UpdateDeliveryCategoryDto } from './dto/update-delivery-category.dto';
+import { CreateDeliverySizeTierDto } from './dto/create-delivery-size-tier.dto';
+import { UpdateDeliverySizeTierDto } from './dto/update-delivery-size-tier.dto';
+import { UpdateDeliverySurchargeDto } from './dto/update-delivery-surcharge.dto';
 import { BroadcastPushDto } from './dto/broadcast-push.dto';
 import { SettleRiderDebtDto } from './dto/settle-rider-debt.dto';
 import { PushService } from '../push/push.service';
@@ -199,6 +202,82 @@ export class AdminController {
       admin.id,
       'delivery-pricing.upsert',
       { type: 'DeliveryPricingRule', id },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Get('delivery-size-tiers')
+  listDeliverySizeTiers() {
+    return this.adminService.listDeliverySizeTiers();
+  }
+
+  @Post('delivery-size-tiers')
+  async createDeliverySizeTier(
+    @CurrentUser() admin: { id: string },
+    @Body() dto: CreateDeliverySizeTierDto,
+  ) {
+    const result = await this.adminService.createDeliverySizeTier(dto);
+    await this.auditLog.log(
+      admin.id,
+      'delivery-size-tier.create',
+      { type: 'DeliverySizeTier', id: result.id },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Patch('delivery-size-tiers/:id')
+  async updateDeliverySizeTier(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpdateDeliverySizeTierDto,
+  ) {
+    const result = await this.adminService.updateDeliverySizeTier(id, dto);
+    await this.auditLog.log(
+      admin.id,
+      'delivery-size-tier.update',
+      { type: 'DeliverySizeTier', id },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Patch('delivery-size-tiers/:id/pricing')
+  async upsertDeliverySizeTierPricing(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpsertPricingRuleDto,
+  ) {
+    const result = await this.adminService.upsertDeliverySizeTierPricingRule(
+      id,
+      dto,
+    );
+    await this.auditLog.log(
+      admin.id,
+      'delivery-size-tier-pricing.upsert',
+      { type: 'DeliverySizeTierPricingRule', id },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Get('delivery-surcharges')
+  listDeliverySurcharges() {
+    return this.adminService.listDeliverySurcharges();
+  }
+
+  @Patch('delivery-surcharges/:key')
+  async updateDeliverySurcharge(
+    @CurrentUser() admin: { id: string },
+    @Param('key') key: string,
+    @Body() dto: UpdateDeliverySurchargeDto,
+  ) {
+    const result = await this.adminService.updateDeliverySurcharge(key, dto);
+    await this.auditLog.log(
+      admin.id,
+      'delivery-surcharge.update',
+      { type: 'DeliverySurchargeRule', id: key },
       { ...dto },
     );
     return result;

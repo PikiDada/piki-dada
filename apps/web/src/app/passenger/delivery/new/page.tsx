@@ -12,13 +12,15 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { LatLng, Delivery, DeliveryCategory } from "@/lib/types";
+import type { LatLng, Delivery, DeliveryCategory, DeliverySizeTier } from "@/lib/types";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
 
 export default function NewDeliveryPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<DeliveryCategory[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [sizeTiers, setSizeTiers] = useState<DeliverySizeTier[]>([]);
+  const [sizeTierId, setSizeTierId] = useState<string | null>(null);
 
   const [pickupAddress, setPickupAddress] = useState("");
   const [pickup, setPickup] = useState<LatLng | undefined>();
@@ -35,6 +37,7 @@ export default function NewDeliveryPage() {
   const [itemPhotoUrl, setItemPhotoUrl] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isFragile, setIsFragile] = useState(false);
+  const [isLiquid, setIsLiquid] = useState(false);
   const [cashOnDeliveryAmount, setCashOnDeliveryAmount] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -45,10 +48,15 @@ export default function NewDeliveryPage() {
       setCategories(list);
       setCategoryId((current) => current ?? list[0]?.id ?? null);
     });
+    apiFetch<DeliverySizeTier[]>("/deliveries/size-tiers").then((list) => {
+      setSizeTiers(list);
+      setSizeTierId((current) => current ?? list[0]?.id ?? null);
+    });
   }, []);
 
   const canRequest =
     categoryId &&
+    sizeTierId &&
     pickup &&
     destination &&
     pickupContactName &&
@@ -97,7 +105,7 @@ export default function NewDeliveryPage() {
   }
 
   async function handleRequestDelivery() {
-    if (!pickup || !destination || !categoryId) return;
+    if (!pickup || !destination || !categoryId || !sizeTierId) return;
     setLoading(true);
     setError(null);
     try {
@@ -107,6 +115,7 @@ export default function NewDeliveryPage() {
           method: "POST",
           body: JSON.stringify({
             categoryId,
+            sizeTierId,
             pickupLat: pickup.lat,
             pickupLng: pickup.lng,
             pickupAddress,
@@ -120,6 +129,7 @@ export default function NewDeliveryPage() {
             itemDescription,
             itemPhotoUrl,
             isFragile,
+            isLiquid,
             cashOnDeliveryAmount: cashOnDeliveryAmount ? Number(cashOnDeliveryAmount) : undefined,
             paymentMethod: "CASH",
           }),
@@ -186,6 +196,36 @@ export default function NewDeliveryPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {sizeTiers.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                How big/heavy is it?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {sizeTiers.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    aria-pressed={sizeTierId === t.id}
+                    onClick={() => setSizeTierId(t.id)}
+                    className={cn(
+                      "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors duration-150",
+                      sizeTierId === t.id
+                        ? "border-neutral-900 bg-neutral-900 text-white"
+                        : "border-neutral-300 text-neutral-700 hover:border-neutral-400",
+                    )}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-neutral-500">
+                Price depends on this, not the category above — a small parcel and a heavy
+                cargo item cost differently even in the same category.
+              </p>
             </div>
           )}
 
@@ -278,7 +318,21 @@ export default function NewDeliveryPage() {
                 />
                 Fragile
               </label>
+              <label className="inline-flex items-center gap-1.5 text-sm text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={isLiquid}
+                  onChange={(e) => setIsLiquid(e.target.checked)}
+                  className="h-4 w-4 rounded border-neutral-300"
+                />
+                Liquid/spillable
+              </label>
             </div>
+            {(isFragile || isLiquid) && (
+              <p className="text-xs text-neutral-500">
+                A small handling fee applies for fragile/liquid items.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

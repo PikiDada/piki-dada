@@ -111,6 +111,19 @@ export interface DeliveryCategory {
   description?: string | null;
   isActive: boolean;
   sortOrder: number;
+  // Superseded by DeliverySizeTier's pricingRule -- category no longer drives price.
+  pricingRule?: { baseFare: number; perKm: number; perMinute: number; currency: string } | null;
+}
+
+// What actually drives delivery price -- how hard the item is to carry, independent of
+// category (a Parcel and a 50kg cargo item shouldn't cost the same just because of what
+// they're called).
+export interface DeliverySizeTier {
+  id: string;
+  name: string;
+  maxWeightKg?: number | null;
+  isActive: boolean;
+  sortOrder: number;
   pricingRule?: { baseFare: number; perKm: number; perMinute: number; currency: string } | null;
 }
 
@@ -119,6 +132,8 @@ export interface Delivery {
   status: DeliveryStatus;
   categoryId: string;
   category?: { id: string; name: string };
+  sizeTierId?: string | null;
+  sizeTier?: { id: string; name: string } | null;
   pickupContactName: string;
   pickupContactPhone: string;
   pickupAddress: string;
@@ -132,6 +147,7 @@ export interface Delivery {
   itemDescription: string;
   itemPhotoUrl?: string | null;
   isFragile: boolean;
+  isLiquid: boolean;
   cashOnDeliveryAmount?: number | null;
   fare: number;
   currency: string;

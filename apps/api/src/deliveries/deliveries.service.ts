@@ -31,7 +31,8 @@ export class DeliveriesService {
     const pickup = { lat: dto.pickupLat, lng: dto.pickupLng };
     const destination = { lat: dto.destinationLat, lng: dto.destinationLng };
     const estimate = await this.pricing.estimateDeliveryFare(
-      dto.categoryId,
+      dto.sizeTierId,
+      { isFragile: dto.isFragile ?? false, isLiquid: dto.isLiquid ?? false },
       pickup,
       destination,
     );
@@ -40,6 +41,7 @@ export class DeliveriesService {
       data: {
         senderId,
         categoryId: dto.categoryId,
+        sizeTierId: dto.sizeTierId,
         status: DeliveryStatus.SEARCHING,
         pickupContactName: dto.pickupContactName,
         pickupContactPhone: dto.pickupContactPhone,
@@ -54,6 +56,7 @@ export class DeliveriesService {
         itemDescription: dto.itemDescription,
         itemPhotoUrl: dto.itemPhotoUrl,
         isFragile: dto.isFragile ?? false,
+        isLiquid: dto.isLiquid ?? false,
         cashOnDeliveryAmount: dto.cashOnDeliveryAmount,
         distanceKm: estimate.distanceKm,
         durationMin: estimate.durationMin,
@@ -244,6 +247,13 @@ export class DeliveriesService {
 
   listCategories() {
     return this.prisma.deliveryCategory.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  listSizeTiers() {
+    return this.prisma.deliverySizeTier.findMany({
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     });

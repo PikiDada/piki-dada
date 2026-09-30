@@ -7,13 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 
-interface PricingRule {
-  baseFare: number;
-  perKm: number;
-  perMinute: number;
-  currency: string;
-}
-
 interface DeliveryCategory {
   id: string;
   name: string;
@@ -21,7 +14,6 @@ interface DeliveryCategory {
   description: string | null;
   isActive: boolean;
   sortOrder: number;
-  pricingRule: PricingRule | null;
 }
 
 function Spinner() {
@@ -53,26 +45,6 @@ export default function AdminDeliveryCategoriesPage() {
 
   function updateCategory(id: string, patch: Partial<DeliveryCategory>) {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  }
-
-  function updatePricing(id: string, patch: Partial<PricingRule>) {
-    setCategories((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              pricingRule: {
-                baseFare: 0,
-                perKm: 0,
-                perMinute: 0,
-                currency: "UGX",
-                ...c.pricingRule,
-                ...patch,
-              },
-            }
-          : c,
-      ),
-    );
   }
 
   async function createCategory() {
@@ -108,26 +80,18 @@ export default function AdminDeliveryCategoriesPage() {
     }
   }
 
-  async function savePricing(category: DeliveryCategory) {
-    const rule = category.pricingRule ?? { baseFare: 0, perKm: 0, perMinute: 0, currency: "UGX" };
-    setSavingId(category.id);
-    try {
-      await apiFetch(`/admin/delivery-categories/${category.id}/pricing`, {
-        method: "PATCH",
-        body: JSON.stringify(rule),
-      });
-    } finally {
-      setSavingId(null);
-    }
-  }
-
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Delivery categories</h1>
       <p className="mb-4 text-sm text-neutral-600">
-        Every category matches a motorcycle rider (Boda vehicle) — there&apos;s no separate vehicle
-        type to pick. Add as many categories as you need; disable one to hide it from the
-        booking form without losing its history.
+        What an item is, for the rider&apos;s handling instructions — this no longer sets price.
+        Pricing is by size/weight tier instead, managed under{" "}
+        <a href="/admin/delivery-size-tiers" className="underline hover:text-black">
+          Delivery size tiers
+        </a>
+        , since a Parcel and a 50kg cargo item shouldn&apos;t cost the same just because of what
+        they&apos;re called. Disable a category to hide it from the booking form without losing
+        its history.
       </p>
 
       <Card className="mb-6">
@@ -185,42 +149,7 @@ export default function AdminDeliveryCategoriesPage() {
                   disabled={savingId === c.id}
                   onClick={() => saveDetails(c)}
                 >
-                  {savingId === c.id ? "Saving..." : "Save details"}
-                </Button>
-
-                <div className="grid grid-cols-3 gap-2 pt-2">
-                  <div className="space-y-1.5">
-                    <Label>Base fare</Label>
-                    <Input
-                      type="number"
-                      value={c.pricingRule?.baseFare ?? 0}
-                      onChange={(e) => updatePricing(c.id, { baseFare: Number(e.target.value) })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Per km</Label>
-                    <Input
-                      type="number"
-                      value={c.pricingRule?.perKm ?? 0}
-                      onChange={(e) => updatePricing(c.id, { perKm: Number(e.target.value) })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Per minute</Label>
-                    <Input
-                      type="number"
-                      value={c.pricingRule?.perMinute ?? 0}
-                      onChange={(e) => updatePricing(c.id, { perMinute: Number(e.target.value) })}
-                    />
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={savingId === c.id}
-                  onClick={() => savePricing(c)}
-                >
-                  {savingId === c.id ? "Saving..." : "Save pricing"}
+                  {savingId === c.id ? "Saving..." : "Save"}
                 </Button>
               </CardContent>
             </Card>

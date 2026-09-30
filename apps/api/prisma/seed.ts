@@ -71,8 +71,9 @@ async function main() {
     create: { code: 'WELCOME10', discountPercent: 10, maxUses: 500 },
   });
 
-  // Starting set of delivery categories — admin can add/rename/disable more later via
-  // /admin/delivery-categories without a deploy.
+  // Starting set of delivery categories — purely descriptive (what the item is, for the
+  // rider's handling instructions). Admin can add/rename/disable more later via
+  // /admin/delivery-categories without a deploy. Price comes from size tiers below, not these.
   const deliveryCategories = [
     { name: 'Parcels & Packages', icon: 'package', sortOrder: 0 },
     { name: 'Food', icon: 'utensils', sortOrder: 1 },
@@ -81,27 +82,74 @@ async function main() {
     { name: 'Other', icon: 'box', sortOrder: 4 },
   ];
   for (const category of deliveryCategories) {
-    const record = await prisma.deliveryCategory.upsert({
+    await prisma.deliveryCategory.upsert({
       where: { name: category.name },
       update: {},
       create: category,
     });
-    await prisma.deliveryPricingRule.upsert({
-      where: { categoryId: record.id },
+  }
+
+  // Size/weight tiers -- what actually drives delivery price, independent of category. A
+  // parcel and a 50kg cargo item cost differently because of the tier they're in, not what
+  // they're called. Admin can add more via /admin/delivery-size-tiers without a deploy.
+  const sizeTiers = [
+    {
+      name: 'Small parcel (up to 5kg)',
+      maxWeightKg: 5,
+      sortOrder: 0,
+      pricing: { baseFare: 1500, perKm: 500, perMinute: 50 },
+    },
+    {
+      name: 'Medium (5-20kg)',
+      maxWeightKg: 20,
+      sortOrder: 1,
+      pricing: { baseFare: 2500, perKm: 700, perMinute: 70 },
+    },
+    {
+      name: 'Large / Cargo (20-50kg)',
+      maxWeightKg: 50,
+      sortOrder: 2,
+      pricing: { baseFare: 4000, perKm: 1000, perMinute: 100 },
+    },
+    {
+      name: 'Heavy (50kg+)',
+      maxWeightKg: null,
+      sortOrder: 3,
+      pricing: { baseFare: 6000, perKm: 1500, perMinute: 150 },
+    },
+  ];
+  for (const tier of sizeTiers) {
+    const record = await prisma.deliverySizeTier.upsert({
+      where: { name: tier.name },
       update: {},
-      // Same as BODA ride pricing — every delivery rides on a motorcycle regardless of category.
       create: {
-        categoryId: record.id,
-        baseFare: 1500,
-        perKm: 500,
-        perMinute: 50,
-        currency: 'UGX',
+        name: tier.name,
+        maxWeightKg: tier.maxWeightKg,
+        sortOrder: tier.sortOrder,
       },
+    });
+    await prisma.deliverySizeTierPricingRule.upsert({
+      where: { sizeTierId: record.id },
+      update: {},
+      create: { sizeTierId: record.id, ...tier.pricing, currency: 'UGX' },
+    });
+  }
+
+  // Flat handling surcharges for delicate/awkward items, added on top of the tier fare.
+  const surcharges = [
+    { key: 'FRAGILE', label: 'Fragile handling', amount: 1000 },
+    { key: 'LIQUID', label: 'Liquid/spillable handling', amount: 1000 },
+  ];
+  for (const surcharge of surcharges) {
+    await prisma.deliverySurchargeRule.upsert({
+      where: { key: surcharge.key },
+      update: {},
+      create: { ...surcharge, currency: 'UGX' },
     });
   }
 
   console.log(
-    'Seed complete: pricing rules, welcome coupon, and delivery categories created.',
+    'Seed complete: pricing rules, welcome coupon, delivery categories, size tiers, and surcharges created.',
   );
 }
 

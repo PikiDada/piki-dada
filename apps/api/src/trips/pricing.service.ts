@@ -163,25 +163,31 @@ export class PricingService {
     }
   }
 
-  // Same fare math as estimateFare, keyed by delivery category instead of rideType. Defaults
-  // to BODA-like rates for a category that has no pricing rule configured yet, rather than
+  // Same fare math as estimateFare, keyed by size/weight tier rather than category -- tier is
+  // what actually drives delivery price (how hard the item is to carry), not what it is. Falls
+  // back to BODA-like rates for a tier that has no pricing rule configured yet, rather than
   // failing a booking outright — matches estimateFare's auto-provisioning behavior above.
+  // `surcharges` adds flat handling fees (fragile, liquid, ...) on top of the tier fare.
   async estimateDeliveryFare(
-    categoryId: string,
+    sizeTierId: string,
+    surcharges: { isFragile: boolean; isLiquid: boolean },
     pickup: LatLng,
     destination: LatLng,
   ) {
     const straightLineKm = this.haversineDistanceKm(pickup, destination);
 
-    const [road, existingRule] = await Promise.all([
+    const [road, existingRule, surchargeRules] = await Promise.all([
       this.computeRoadRoute(pickup, destination),
-      this.prisma.deliveryPricingRule.findUnique({ where: { categoryId } }),
+      this.prisma.deliverySizeTierPricingRule.findUnique({
+        where: { sizeTierId },
+      }),
+      this.prisma.deliverySurchargeRule.findMany({ where: { isActive: true } }),
     ]);
     const rule =
       existingRule ??
-      (await this.prisma.deliveryPricingRule.create({
+      (await this.prisma.deliverySizeTierPricingRule.create({
         data: {
-          categoryId,
+          sizeTierId,
           baseFare: 1500,
           perKm: 500,
           perMinute: 50,
@@ -194,14 +200,22 @@ export class PricingService {
     const durationMin =
       road?.durationMin ?? (distanceKm / AVERAGE_SPEED_KMH) * 60;
 
-    const fare =
+    const baseFare =
       rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
 
+    const activeFlags: Record<string, boolean> = {
+      FRAGILE: surcharges.isFragile,
+      LIQUID: surcharges.isLiquid,
+    };
+    const surchargeTotal = surchargeRules
+      .filter((s) => activeFlags[s.key])
+      .reduce((sum, s) => sum + s.amount, 0);
+
     return {
-      categoryId,
+      sizeTierId,
       distanceKm: Number(distanceKm.toFixed(2)),
       durationMin: Number(durationMin.toFixed(1)),
-      fare: Math.round(fare),
+      fare: Math.round(baseFare + surchargeTotal),
       currency: rule.currency,
     };
   }

@@ -107,7 +107,9 @@ export default function PassengerDeliveryPage() {
           </p>
           <div className="rounded-xl bg-neutral-50 p-3 text-sm">
             <p className="font-medium">{delivery.itemDescription}</p>
+            {delivery.sizeTier && <p className="text-neutral-600">{delivery.sizeTier.name}</p>}
             {delivery.isFragile && <p className="text-amber-700">Fragile</p>}
+            {delivery.isLiquid && <p className="text-amber-700">Liquid/spillable</p>}
             {delivery.cashOnDeliveryAmount != null && (
               <p className="text-neutral-600">
                 Collect {delivery.cashOnDeliveryAmount.toLocaleString()} {delivery.currency} from

@@ -250,14 +250,19 @@ model Payment {
 // kept as separate models so this real-money code never touches the existing ride-payment
 // flow. Same riders (Driver) accept both; a delivery always matches BODA-vehicle riders only.
 model Delivery {
-  id                   String           @id @default(cuid())
+  id                   String            @id @default(cuid())
   senderId             String
-  sender               User             @relation("SentDeliveries", fields: [senderId], references: [id])
+  sender               User              @relation("SentDeliveries", fields: [senderId], references: [id])
   riderId              String?
-  rider                Driver?          @relation("RiderDeliveries", fields: [riderId], references: [id])
+  rider                Driver?           @relation("RiderDeliveries", fields: [riderId], references: [id])
   categoryId           String
-  category             DeliveryCategory @relation(fields: [categoryId], references: [id])
-  status               DeliveryStatus   @default(REQUESTED)
+  category             DeliveryCategory  @relation(fields: [categoryId], references: [id])
+  // Nullable at the DB level (not backfilled for any pre-existing test rows), but required by
+  // the request DTO for every new delivery -- see RequestDeliveryDto. This is what actually
+  // drives the fare now; category is purely descriptive (see DeliveryCategory's comment).
+  sizeTierId           String?
+  sizeTier             DeliverySizeTier? @relation(fields: [sizeTierId], references: [id])
+  status               DeliveryStatus    @default(REQUESTED)
   pickupContactName    String
   pickupContactPhone   String
   pickupAddress        String
@@ -270,12 +275,13 @@ model Delivery {
   destinationLng       Float
   itemDescription      String
   itemPhotoUrl         String?
-  isFragile            Boolean          @default(false)
+  isFragile            Boolean           @default(false)
+  isLiquid             Boolean           @default(false)
   cashOnDeliveryAmount Float?
   distanceKm           Float?
   durationMin          Float?
   fare                 Float?
-  currency             String           @default("UGX")
+  currency             String            @default("UGX")
   paymentMethod        PaymentMethod
   acceptedAt           DateTime?
   arrivedPickupAt      DateTime?
@@ -284,8 +290,8 @@ model Delivery {
   deliveredAt          DateTime?
   cancelledAt          DateTime?
   cancellationReason   String?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   payment DeliveryPayment?
 }
@@ -371,6 +377,9 @@ model PricingRule {
 // Categories are admin-managed data, not a fixed enum, so new ones (e.g. "Medicine",
 // "Flowers") can be added from /admin/delivery-categories without a code deploy -- the
 // defining constraint for what's deliverable is "fits on a motorcycle," not the item type.
+// Purely descriptive: what the item is, for the rider's handling instructions. Price is driven
+// by DeliverySizeTier below instead -- a "Parcel" and a 50kg cargo item aren't the same price
+// just because they're filed under the same category.
 model DeliveryCategory {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -385,6 +394,8 @@ model DeliveryCategory {
   pricingRule DeliveryPricingRule?
 }
 
+// Superseded by DeliverySizeTierPricingRule below -- left in place (unused) rather than
+// dropped, so no data is destroyed. /admin/delivery-categories no longer exposes pricing.
 model DeliveryPricingRule {
   id         String           @id @default(cuid())
   categoryId String           @unique
@@ -394,6 +405,47 @@ model DeliveryPricingRule {
   perMinute  Float
   currency   String           @default("UGX")
   updatedAt  DateTime         @updatedAt
+}
+
+// How hard the item is to carry -- this is what actually prices a delivery, independent of
+// category. Admin-managed data for the same reason categories are: e.g. "Small parcel (up to
+// 5kg)", "Medium (5-20kg)", "Large/Cargo (20-50kg)", "Heavy (50kg+)".
+model DeliverySizeTier {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  maxWeightKg Float?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deliveries  Delivery[]
+  pricingRule DeliverySizeTierPricingRule?
+}
+
+model DeliverySizeTierPricingRule {
+  id         String           @id @default(cuid())
+  sizeTierId String           @unique
+  sizeTier   DeliverySizeTier @relation(fields: [sizeTierId], references: [id], onDelete: Cascade)
+  baseFare   Float
+  perKm      Float
+  perMinute  Float
+  currency   String           @default("UGX")
+  updatedAt  DateTime         @updatedAt
+}
+
+// Flat handling surcharges for delicate/awkward items -- a small table instead of hardcoded
+// numbers so admin can tune the amount (or add a third key later via one seed row) without a
+// deploy. Exactly FRAGILE and LIQUID exist for now; admin edits amounts, doesn't create new
+// ones yet.
+model DeliverySurchargeRule {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  amount    Float
+  currency  String   @default("UGX")
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
 }
 
 model PushSubscription {

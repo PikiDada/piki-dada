@@ -12,6 +12,10 @@ export class RequestDeliveryDto {
   @IsString()
   categoryId: string;
 
+  // Drives the fare (how hard the item is to carry) -- categoryId above is descriptive only.
+  @IsString()
+  sizeTierId: string;
+
   @IsString()
   pickupContactName: string;
 
@@ -52,6 +56,10 @@ export class RequestDeliveryDto {
   @IsOptional()
   @IsBoolean()
   isFragile?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isLiquid?: boolean;
 
   @IsOptional()
   @IsNumber()
