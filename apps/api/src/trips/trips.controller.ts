@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -42,13 +50,20 @@ export class TripsController {
   }
 
   @Post(':id/rate')
-  rate(@CurrentUser() user: { id: string }, @Param('id') id: string, @Body() dto: RateTripDto) {
+  rate(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: RateTripDto,
+  ) {
     return this.tripsService.rateTrip(user.id, id, dto);
   }
 
   @Get('me')
   myTrips(@CurrentUser() user: { id: string; role: UserRole }) {
-    return this.tripsService.myTrips(user.id, user.role === UserRole.DRIVER ? 'DRIVER' : 'PASSENGER');
+    return this.tripsService.myTrips(
+      user.id,
+      user.role === UserRole.DRIVER ? 'DRIVER' : 'PASSENGER',
+    );
   }
 
   @Get(':id')

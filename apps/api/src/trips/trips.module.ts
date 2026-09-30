@@ -10,6 +10,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [JwtModule.register({}), NotificationsModule],
   controllers: [TripsController],
   providers: [TripsService, TripsGateway, PricingService],
-  exports: [TripsService, PricingService],
+  exports: [TripsService, PricingService, TripsGateway],
 })
 export class TripsModule {}

@@ -3,7 +3,19 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Motorbike, MapPin, Tag, DollarSign, Megaphone, Wallet, LogOut } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  Motorbike,
+  MapPin,
+  Package,
+  Tags,
+  Tag,
+  DollarSign,
+  Megaphone,
+  Wallet,
+  LogOut,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
@@ -13,6 +25,8 @@ const ITEMS = [
   { href: "/admin/drivers", label: "Riders", icon: Motorbike },
   { href: "/admin/drivers/wallets", label: "Payouts", icon: Wallet },
   { href: "/admin/trips", label: "Trips", icon: MapPin },
+  { href: "/admin/deliveries", label: "Deliveries", icon: Package },
+  { href: "/admin/delivery-categories", label: "Delivery categories", icon: Tags },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/pricing", label: "Pricing", icon: DollarSign },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },

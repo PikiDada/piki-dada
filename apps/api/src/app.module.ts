@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { DriversModule } from './drivers/drivers.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { TripsModule } from './trips/trips.module';
+import { DeliveriesModule } from './deliveries/deliveries.module';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -30,6 +31,7 @@ import { PushModule } from './push/push.module';
     DriversModule,
     UploadsModule,
     TripsModule,
+    DeliveriesModule,
     AdminModule,
     PaymentsModule,
     NotificationsModule,

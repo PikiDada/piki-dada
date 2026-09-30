@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PaymentMethod, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,7 +25,8 @@ export class PaymentsService {
       include: { payment: true, passenger: true },
     });
     if (!trip) throw new NotFoundException('Trip not found');
-    if (trip.passengerId !== passengerId) throw new BadRequestException('Not your trip');
+    if (trip.passengerId !== passengerId)
+      throw new BadRequestException('Not your trip');
     if (!trip.payment || trip.payment.status === PaymentStatus.PAID) {
       throw new BadRequestException('Trip has no pending payment');
     }
@@ -32,7 +37,8 @@ export class PaymentsService {
     const trip = await this.getPayableTrip(tripId, passengerId);
     const webUrl = this.config.getOrThrow<string>('CORS_ORIGIN');
     const url = await this.stripeService.createCheckoutSession({
-      tripId,
+      referenceId: tripId,
+      kind: 'trip',
       amount: trip.payment!.amount,
       currency: trip.payment!.currency,
       successUrl: `${webUrl}/passenger/trip/${tripId}?paid=1`,
@@ -45,7 +51,8 @@ export class PaymentsService {
     const trip = await this.getPayableTrip(tripId, passengerId);
     const webUrl = this.config.getOrThrow<string>('CORS_ORIGIN');
     const url = await this.flutterwaveService.initializePayment({
-      tripId,
+      referenceId: tripId,
+      kind: 'trip',
       amount: trip.payment!.amount,
       currency: trip.payment!.currency,
       customerEmail: trip.passenger.email,
@@ -73,7 +80,8 @@ export class PaymentsService {
       include: { payment: true },
     });
     if (!trip) throw new NotFoundException('Trip not found');
-    if (trip.passengerId !== passengerId) throw new BadRequestException('Not your trip');
+    if (trip.passengerId !== passengerId)
+      throw new BadRequestException('Not your trip');
     if (trip.paymentMethod !== PaymentMethod.CASH) {
       throw new BadRequestException('Trip is not a cash payment');
     }
@@ -100,22 +108,42 @@ export class PaymentsService {
       include: { driver: true },
     });
     if (!trip?.driverId || !trip.driver) return;
+    await this.creditDriverEarnings(
+      trip.driver.userId,
+      trip.fare ?? 0,
+      trip.paymentMethod,
+      `Trip ${tripId}`,
+    );
+  }
 
-    const fare = trip.fare ?? 0;
+  // Shared by trip and delivery payment flows (same commission rate either way) — pure math
+  // plus a wallet-ledger write, safe to share unlike the payment call sites around it, which
+  // stay deliberately duplicated per delivery/trip to avoid touching this real-money code path
+  // for the sake of reuse. `referenceLabel` becomes the ledger entry's human-readable reason,
+  // e.g. "Trip abc123" or "Delivery xyz789".
+  async creditDriverEarnings(
+    userId: string,
+    fare: number,
+    paymentMethod: PaymentMethod,
+    referenceLabel: string,
+  ) {
     const commission = Math.round(fare * PLATFORM_COMMISSION_RATE);
 
-    if (trip.paymentMethod === PaymentMethod.CASH) {
-      // Cash trips: the rider already collected the full fare directly from the
-      // passenger, so the platform never held any of this money -- crediting 85%
-      // on top would pay the rider twice. What's actually owed runs the other
-      // way: the rider owes the platform its commission. Record that as a debit
-      // rather than paying out money that was never collected.
+    if (paymentMethod === PaymentMethod.CASH) {
+      // Cash trips/deliveries: the rider already collected the full fare directly from the
+      // customer, so the platform never held any of this money -- crediting 85% on top would
+      // pay the rider twice. What's actually owed runs the other way: the rider owes the
+      // platform its commission. Record that as a debit rather than paying out money that was
+      // never collected.
       await this.prisma.wallet.update({
-        where: { userId: trip.driver.userId },
+        where: { userId },
         data: {
           balance: { decrement: commission },
           ledgerEntries: {
-            create: { amount: -commission, reason: `Trip ${tripId} commission owed (cash)` },
+            create: {
+              amount: -commission,
+              reason: `${referenceLabel} commission owed (cash)`,
+            },
           },
         },
       });
@@ -124,10 +152,15 @@ export class PaymentsService {
 
     const driverEarnings = fare - commission;
     await this.prisma.wallet.update({
-      where: { userId: trip.driver.userId },
+      where: { userId },
       data: {
         balance: { increment: driverEarnings },
-        ledgerEntries: { create: { amount: driverEarnings, reason: `Trip ${tripId} earnings` } },
+        ledgerEntries: {
+          create: {
+            amount: driverEarnings,
+            reason: `${referenceLabel} earnings`,
+          },
+        },
       },
     });
   }
@@ -144,7 +177,8 @@ export class PaymentsService {
   async withdraw(userId: string, amount: number) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) throw new NotFoundException('Wallet not found');
-    if (wallet.balance < amount) throw new BadRequestException('Insufficient balance');
+    if (wallet.balance < amount)
+      throw new BadRequestException('Insufficient balance');
 
     return this.prisma.wallet.update({
       where: { id: wallet.id },

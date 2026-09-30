@@ -1,8 +1,20 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PaymentMethod, PaymentStatus, TripStatus, UserRole } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  DeliveryStatus,
+  PaymentMethod,
+  PaymentStatus,
+  TripStatus,
+  UserRole,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
+import { CreateDeliveryCategoryDto } from './dto/create-delivery-category.dto';
+import { UpdateDeliveryCategoryDto } from './dto/update-delivery-category.dto';
 import { decryptUserPhone } from '../common/field-encryption';
 import { PLATFORM_COMMISSION_RATE } from '../trips/trips.service';
 
@@ -11,17 +23,33 @@ export class AdminService {
   constructor(private prisma: PrismaService) {}
 
   async getStats() {
-    const [totalTrips, completedTrips, activeDrivers, totalPassengers, revenue] =
-      await Promise.all([
-        this.prisma.trip.count(),
-        this.prisma.trip.count({ where: { status: TripStatus.COMPLETED } }),
-        this.prisma.driver.count({ where: { isOnline: true } }),
-        this.prisma.user.count({ where: { role: UserRole.PASSENGER } }),
-        this.prisma.payment.aggregate({
-          where: { status: PaymentStatus.PAID },
-          _sum: { amount: true },
-        }),
-      ]);
+    const [
+      totalTrips,
+      completedTrips,
+      activeDrivers,
+      totalPassengers,
+      revenue,
+      totalDeliveries,
+      completedDeliveries,
+      deliveryRevenue,
+    ] = await Promise.all([
+      this.prisma.trip.count(),
+      this.prisma.trip.count({ where: { status: TripStatus.COMPLETED } }),
+      this.prisma.driver.count({ where: { isOnline: true } }),
+      this.prisma.user.count({ where: { role: UserRole.PASSENGER } }),
+      this.prisma.payment.aggregate({
+        where: { status: PaymentStatus.PAID },
+        _sum: { amount: true },
+      }),
+      this.prisma.delivery.count(),
+      this.prisma.delivery.count({
+        where: { status: DeliveryStatus.DELIVERED },
+      }),
+      this.prisma.deliveryPayment.aggregate({
+        where: { status: PaymentStatus.PAID },
+        _sum: { amount: true },
+      }),
+    ]);
 
     return {
       totalTrips,
@@ -29,12 +57,19 @@ export class AdminService {
       activeDrivers,
       totalPassengers,
       totalRevenue: revenue._sum.amount ?? 0,
+      totalDeliveries,
+      completedDeliveries,
+      deliveryRevenue: deliveryRevenue._sum.amount ?? 0,
     };
   }
 
   async getFinanceSummary() {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const startOfWeek = new Date(startOfToday);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -50,8 +85,13 @@ export class AdminService {
       byMethod,
       walletTotal,
       nonCashPaid,
+      deliveryPaid,
     ] = await Promise.all([
-      this.prisma.payment.aggregate({ where: paidWhere, _sum: { amount: true }, _count: true }),
+      this.prisma.payment.aggregate({
+        where: paidWhere,
+        _sum: { amount: true },
+        _count: true,
+      }),
       this.prisma.payment.aggregate({
         where: { ...paidWhere, createdAt: { gte: startOfToday } },
         _sum: { amount: true },
@@ -84,15 +124,35 @@ export class AdminService {
         where: { ...paidWhere, method: { not: PaymentMethod.CASH } },
         _sum: { amount: true },
       }),
+      // Deliveries don't get the same today/week/month/byMethod breakdown as trips yet --
+      // just an all-time total, kept separate here rather than folded into grossRevenue so
+      // the existing trip-revenue figure this dashboard already reports doesn't shift meaning
+      // for anyone already relying on it.
+      this.prisma.deliveryPayment.aggregate({
+        where: paidWhere,
+        _sum: { amount: true },
+        _count: true,
+      }),
     ]);
 
     const grossRevenue = allTimePaid._sum.amount ?? 0;
-    const platformCommission = Math.round(grossRevenue * PLATFORM_COMMISSION_RATE);
+    const platformCommission = Math.round(
+      grossRevenue * PLATFORM_COMMISSION_RATE,
+    );
     const nonCashRevenue = nonCashPaid._sum.amount ?? 0;
-    const riderPayouts = Math.round(nonCashRevenue * (1 - PLATFORM_COMMISSION_RATE));
+    const riderPayouts = Math.round(
+      nonCashRevenue * (1 - PLATFORM_COMMISSION_RATE),
+    );
+    const deliveryGrossRevenue = deliveryPaid._sum.amount ?? 0;
+    const deliveryCommission = Math.round(
+      deliveryGrossRevenue * PLATFORM_COMMISSION_RATE,
+    );
 
     return {
       grossRevenue,
+      deliveryGrossRevenue,
+      deliveryCommission,
+      paidDeliveryCount: deliveryPaid._count,
       platformCommission,
       riderPayouts,
       paidTripCount: allTimePaid._count,
@@ -129,7 +189,11 @@ export class AdminService {
     } as const;
 
     const [totals, byMethod, nonCash] = await Promise.all([
-      this.prisma.payment.aggregate({ where: paidInRange, _sum: { amount: true }, _count: true }),
+      this.prisma.payment.aggregate({
+        where: paidInRange,
+        _sum: { amount: true },
+        _count: true,
+      }),
       this.prisma.payment.groupBy({
         by: ['method'],
         where: paidInRange,
@@ -143,8 +207,12 @@ export class AdminService {
     ]);
 
     const grossRevenue = totals._sum.amount ?? 0;
-    const platformCommission = Math.round(grossRevenue * PLATFORM_COMMISSION_RATE);
-    const riderPayouts = Math.round((nonCash._sum.amount ?? 0) * (1 - PLATFORM_COMMISSION_RATE));
+    const platformCommission = Math.round(
+      grossRevenue * PLATFORM_COMMISSION_RATE,
+    );
+    const riderPayouts = Math.round(
+      (nonCash._sum.amount ?? 0) * (1 - PLATFORM_COMMISSION_RATE),
+    );
 
     return {
       from: from.toISOString(),
@@ -153,7 +221,11 @@ export class AdminService {
       platformCommission,
       riderPayouts,
       paidTripCount: totals._count,
-      byMethod: byMethod.map((m) => ({ method: m.method, amount: m._sum.amount ?? 0, count: m._count })),
+      byMethod: byMethod.map((m) => ({
+        method: m.method,
+        amount: m._sum.amount ?? 0,
+        count: m._count,
+      })),
       currency: 'UGX',
     };
   }
@@ -191,11 +263,17 @@ export class AdminService {
       }));
   }
 
-  async settleRiderDebt(driverId: string, amount: number, note: string | undefined) {
+  async settleRiderDebt(
+    driverId: string,
+    amount: number,
+    note: string | undefined,
+  ) {
     if (amount <= 0) {
       throw new BadRequestException('Settlement amount must be positive');
     }
-    const driver = await this.prisma.driver.findUnique({ where: { id: driverId } });
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+    });
     if (!driver) throw new NotFoundException('Rider not found');
 
     return this.prisma.wallet.update({
@@ -221,6 +299,50 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
     return users.map(decryptUserPhone);
+  }
+
+  async getUserDetail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      omit: { passwordHash: true },
+      include: {
+        wallet: true,
+        savedPlaces: true,
+        emergencyContact: true,
+        driverProfile: { include: { vehicle: true, documents: true } },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const [passengerTrips, driverTrips, ratingsReceived] = await Promise.all([
+      this.prisma.trip.findMany({
+        where: { passengerId: userId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { driver: { include: { user: { select: { name: true } } } } },
+      }),
+      user.driverProfile
+        ? this.prisma.trip.findMany({
+            where: { driverId: user.driverProfile.id },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+            include: { passenger: { select: { name: true } } },
+          })
+        : Promise.resolve([]),
+      this.prisma.rating.findMany({
+        where: { toUserId: userId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { fromUser: { select: { name: true } } },
+      }),
+    ]);
+
+    return {
+      ...decryptUserPhone(user),
+      passengerTrips,
+      driverTrips,
+      ratingsReceived,
+    };
   }
 
   setUserActive(userId: string, isActive: boolean) {
@@ -259,9 +381,12 @@ export class AdminService {
   async promoteToAdmin(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new BadRequestException('User not found');
-    if (user.role === UserRole.ADMIN) throw new BadRequestException('User is already an admin');
+    if (user.role === UserRole.ADMIN)
+      throw new BadRequestException('User is already an admin');
     if (!user.emailVerifiedAt) {
-      throw new BadRequestException('User must have a verified email before being promoted to admin');
+      throw new BadRequestException(
+        'User must have a verified email before being promoted to admin',
+      );
     }
     return this.prisma.user.update({
       where: { id: userId },
@@ -274,7 +399,45 @@ export class AdminService {
     return this.prisma.trip.findMany({
       orderBy: { createdAt: 'desc' },
       take: 100,
-      include: { passenger: { select: { name: true } }, driver: { include: { user: { select: { name: true } } } } },
+      include: {
+        passenger: { select: { name: true } },
+        driver: { include: { user: { select: { name: true } } } },
+      },
+    });
+  }
+
+  listDeliveries() {
+    return this.prisma.delivery.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        sender: { select: { name: true } },
+        rider: { include: { user: { select: { name: true } } } },
+        category: { select: { name: true } },
+      },
+    });
+  }
+
+  listDeliveryCategories() {
+    return this.prisma.deliveryCategory.findMany({
+      orderBy: { sortOrder: 'asc' },
+      include: { pricingRule: true },
+    });
+  }
+
+  createDeliveryCategory(dto: CreateDeliveryCategoryDto) {
+    return this.prisma.deliveryCategory.create({ data: dto });
+  }
+
+  updateDeliveryCategory(id: string, dto: UpdateDeliveryCategoryDto) {
+    return this.prisma.deliveryCategory.update({ where: { id }, data: dto });
+  }
+
+  upsertDeliveryPricingRule(categoryId: string, dto: UpsertPricingRuleDto) {
+    return this.prisma.deliveryPricingRule.upsert({
+      where: { categoryId },
+      update: dto,
+      create: { categoryId, ...dto },
     });
   }
 
@@ -282,7 +445,10 @@ export class AdminService {
     return this.prisma.pricingRule.findMany();
   }
 
-  upsertPricingRule(rideType: 'ECONOMY' | 'COMFORT' | 'BODA', dto: UpsertPricingRuleDto) {
+  upsertPricingRule(
+    rideType: 'ECONOMY' | 'COMFORT' | 'BODA',
+    dto: UpsertPricingRuleDto,
+  ) {
     return this.prisma.pricingRule.upsert({
       where: { rideType },
       update: dto,
@@ -296,7 +462,10 @@ export class AdminService {
 
   createCoupon(dto: CreateCouponDto) {
     return this.prisma.coupon.create({
-      data: { ...dto, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined },
+      data: {
+        ...dto,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      },
     });
   }
 

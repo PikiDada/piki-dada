@@ -15,6 +15,9 @@ interface Stats {
   activeDrivers: number;
   totalPassengers: number;
   totalRevenue: number;
+  totalDeliveries: number;
+  completedDeliveries: number;
+  deliveryRevenue: number;
 }
 
 interface MethodBreakdown {
@@ -36,6 +39,9 @@ interface Finance {
   walletBalanceHeld: number;
   byMethod: MethodBreakdown[];
   currency: string;
+  deliveryGrossRevenue: number;
+  deliveryCommission: number;
+  paidDeliveryCount: number;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -140,6 +146,8 @@ export default function AdminDashboardPage() {
     { label: "Completed trips", value: stats.completedTrips, href: "/admin/trips" },
     { label: "Active riders", value: stats.activeDrivers, href: "/admin/drivers/active" },
     { label: "Total passengers", value: stats.totalPassengers, href: "/admin/users" },
+    { label: "Total deliveries", value: stats.totalDeliveries, href: "/admin/deliveries" },
+    { label: "Completed deliveries", value: stats.completedDeliveries, href: "/admin/deliveries" },
   ];
 
   const maxMethodAmount = finance ? Math.max(1, ...finance.byMethod.map((m) => m.amount)) : 1;
@@ -147,7 +155,7 @@ export default function AdminDashboardPage() {
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Dashboard</h1>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         {cards.map((c) => {
           const body = (
             <CardContent className="pt-6">
@@ -206,6 +214,20 @@ export default function AdminDashboardPage() {
                 <p className="text-sm text-neutral-600">Pending payment</p>
                 <p className="text-2xl font-bold tabular-nums">{money(finance.pendingAmount, finance.currency)}</p>
                 <p className="mt-1 text-xs text-neutral-600">{finance.pendingCount} trips awaiting settlement</p>
+              </CardContent>
+            </Card>
+            {/* Deliveries don't get the same today/week/month/byMethod breakdown as trips
+                yet, just this all-time total — see admin.service.ts's getFinanceSummary. */}
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-neutral-600">Delivery commission (15%)</p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {money(finance.deliveryCommission, finance.currency)}
+                </p>
+                <p className="mt-1 text-xs text-neutral-600">
+                  from {money(finance.deliveryGrossRevenue, finance.currency)} across{" "}
+                  {finance.paidDeliveryCount} paid deliveries, all time
+                </p>
               </CardContent>
             </Card>
           </div>

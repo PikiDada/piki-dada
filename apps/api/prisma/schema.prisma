@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
@@ -27,6 +26,20 @@ enum TripStatus {
   ARRIVED
   IN_PROGRESS
   COMPLETED
+  CANCELLED
+}
+
+// Two "arrived" states (unlike TripStatus) because a delivery rider visits two distinct
+// places for two distinct events -- collecting the item, then handing it off -- where a ride
+// just starts once the passenger is in the vehicle.
+enum DeliveryStatus {
+  REQUESTED
+  SEARCHING
+  ACCEPTED
+  ARRIVED_PICKUP
+  PICKED_UP
+  ARRIVED_DROPOFF
+  DELIVERED
   CANCELLED
 }
 
@@ -63,34 +76,35 @@ enum VerificationTokenPurpose {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String?
-  googleId     String?  @unique
-  name         String
-  phone        String?
-  photoUrl     String?
-  fcmToken     String?
-  role         UserRole
-  isActive     Boolean  @default(true)
-  emailVerifiedAt DateTime?
-  failedLoginAttempts Int @default(0)
-  lockedUntil  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  passwordHash        String?
+  googleId            String?   @unique
+  name                String
+  phone               String?
+  photoUrl            String?
+  fcmToken            String?
+  role                UserRole
+  isActive            Boolean   @default(true)
+  emailVerifiedAt     DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  driverProfile    Driver?
-  savedPlaces      SavedPlace[]
-  passengerTrips   Trip[]            @relation("PassengerTrips")
-  emergencyContact EmergencyContact[]
-  wallet           Wallet?
-  ratingsGiven     Rating[]          @relation("RatingsGiven")
-  ratingsReceived  Rating[]          @relation("RatingsReceived")
-  notifications    Notification[]
-  refreshTokens    RefreshToken[]
-  pushSubscriptions PushSubscription[]
+  driverProfile      Driver?
+  savedPlaces        SavedPlace[]
+  passengerTrips     Trip[]              @relation("PassengerTrips")
+  sentDeliveries     Delivery[]          @relation("SentDeliveries")
+  emergencyContact   EmergencyContact[]
+  wallet             Wallet?
+  ratingsGiven       Rating[]            @relation("RatingsGiven")
+  ratingsReceived    Rating[]            @relation("RatingsReceived")
+  notifications      Notification[]
+  refreshTokens      RefreshToken[]
+  pushSubscriptions  PushSubscription[]
   verificationTokens VerificationToken[]
-  auditLogs        AuditLog[]
+  auditLogs          AuditLog[]
 }
 
 model AuditLog {
@@ -146,89 +160,147 @@ model EmergencyContact {
 }
 
 model Driver {
-  id               String                @id @default(cuid())
-  userId           String                @unique
-  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  approvalStatus   DriverApprovalStatus  @default(PENDING)
-  isOnline         Boolean               @default(false)
-  currentLat       Float?
-  currentLng       Float?
-  rating           Float                 @default(5.0)
-  totalTrips       Int                   @default(0)
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  id             String               @id @default(cuid())
+  userId         String               @unique
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvalStatus DriverApprovalStatus @default(PENDING)
+  isOnline       Boolean              @default(false)
+  currentLat     Float?
+  currentLng     Float?
+  rating         Float                @default(5.0)
+  totalTrips     Int                  @default(0)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  vehicle   Vehicle?
-  documents Document[]
-  trips     Trip[]     @relation("DriverTrips")
+  vehicle    Vehicle?
+  documents  Document[]
+  trips      Trip[]     @relation("DriverTrips")
+  deliveries Delivery[] @relation("RiderDeliveries")
 }
 
 model Vehicle {
-  id           String   @id @default(cuid())
-  driverId     String   @unique
-  driver       Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  make         String
-  model        String
-  color        String
-  plateNumber  String   @unique
-  rideType     RideType
-  photoUrl     String?
-  createdAt    DateTime @default(now())
+  id          String   @id @default(cuid())
+  driverId    String   @unique
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  make        String
+  model       String
+  color       String
+  plateNumber String   @unique
+  rideType    RideType
+  photoUrl    String?
+  createdAt   DateTime @default(now())
 }
 
 model Document {
-  id        String       @id @default(cuid())
-  driverId  String
-  driver    Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  type      DocumentType
-  fileUrl   String
-  uploadedAt DateTime    @default(now())
+  id         String       @id @default(cuid())
+  driverId   String
+  driver     Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  type       DocumentType
+  fileUrl    String
+  uploadedAt DateTime     @default(now())
 }
 
 model Trip {
-  id                  String        @id @default(cuid())
-  passengerId         String
-  passenger           User          @relation("PassengerTrips", fields: [passengerId], references: [id])
-  driverId            String?
-  driver              Driver?       @relation("DriverTrips", fields: [driverId], references: [id])
-  status              TripStatus    @default(REQUESTED)
-  rideType            RideType
-  pickupAddress       String
-  pickupLat           Float
-  pickupLng           Float
-  destinationAddress  String
-  destinationLat      Float
-  destinationLng      Float
-  distanceKm          Float?
-  durationMin         Float?
-  fare                Float?
-  currency            String        @default("UGX")
-  couponCode          String?
-  paymentMethod       PaymentMethod
-  acceptedAt          DateTime?
-  arrivedAt           DateTime?
-  startedAt           DateTime?
-  completedAt         DateTime?
-  cancelledAt         DateTime?
-  cancellationReason  String?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  passengerId        String
+  passenger          User          @relation("PassengerTrips", fields: [passengerId], references: [id])
+  driverId           String?
+  driver             Driver?       @relation("DriverTrips", fields: [driverId], references: [id])
+  status             TripStatus    @default(REQUESTED)
+  rideType           RideType
+  pickupAddress      String
+  pickupLat          Float
+  pickupLng          Float
+  destinationAddress String
+  destinationLat     Float
+  destinationLng     Float
+  distanceKm         Float?
+  durationMin        Float?
+  fare               Float?
+  currency           String        @default("UGX")
+  couponCode         String?
+  paymentMethod      PaymentMethod
+  acceptedAt         DateTime?
+  arrivedAt          DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   payment Payment?
   ratings Rating[]
 }
 
 model Payment {
-  id            String        @id @default(cuid())
-  tripId        String        @unique
-  trip          Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  amount        Float
-  currency      String        @default("UGX")
-  method        PaymentMethod
-  status        PaymentStatus @default(PENDING)
-  providerRef   String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id          String        @id @default(cuid())
+  tripId      String        @unique
+  trip        Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  amount      Float
+  currency    String        @default("UGX")
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  providerRef String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+// Deliveries are a parallel offering to Trip/Payment above, not a generalization of them --
+// kept as separate models so this real-money code never touches the existing ride-payment
+// flow. Same riders (Driver) accept both; a delivery always matches BODA-vehicle riders only.
+model Delivery {
+  id                   String           @id @default(cuid())
+  senderId             String
+  sender               User             @relation("SentDeliveries", fields: [senderId], references: [id])
+  riderId              String?
+  rider                Driver?          @relation("RiderDeliveries", fields: [riderId], references: [id])
+  categoryId           String
+  category             DeliveryCategory @relation(fields: [categoryId], references: [id])
+  status               DeliveryStatus   @default(REQUESTED)
+  pickupContactName    String
+  pickupContactPhone   String
+  pickupAddress        String
+  pickupLat            Float
+  pickupLng            Float
+  dropoffContactName   String
+  dropoffContactPhone  String
+  destinationAddress   String
+  destinationLat       Float
+  destinationLng       Float
+  itemDescription      String
+  itemPhotoUrl         String?
+  isFragile            Boolean          @default(false)
+  cashOnDeliveryAmount Float?
+  distanceKm           Float?
+  durationMin          Float?
+  fare                 Float?
+  currency             String           @default("UGX")
+  paymentMethod        PaymentMethod
+  acceptedAt           DateTime?
+  arrivedPickupAt      DateTime?
+  pickedUpAt           DateTime?
+  arrivedDropoffAt     DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  cancellationReason   String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  payment DeliveryPayment?
+}
+
+model DeliveryPayment {
+  id          String        @id @default(cuid())
+  deliveryId  String        @unique
+  delivery    Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  amount      Float
+  currency    String        @default("UGX")
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  providerRef String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }
 
 model Wallet {
@@ -275,25 +347,53 @@ model Notification {
 }
 
 model Coupon {
-  id             String    @id @default(cuid())
-  code           String    @unique
-  discountAmount Float?
+  id              String    @id @default(cuid())
+  code            String    @unique
+  discountAmount  Float?
   discountPercent Float?
-  maxUses        Int?
-  usedCount      Int       @default(0)
-  expiresAt      DateTime?
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
+  maxUses         Int?
+  usedCount       Int       @default(0)
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
 }
 
 model PricingRule {
+  id        String   @id @default(cuid())
+  rideType  RideType @unique
+  baseFare  Float
+  perKm     Float
+  perMinute Float
+  currency  String   @default("UGX")
+  updatedAt DateTime @updatedAt
+}
+
+// Categories are admin-managed data, not a fixed enum, so new ones (e.g. "Medicine",
+// "Flowers") can be added from /admin/delivery-categories without a code deploy -- the
+// defining constraint for what's deliverable is "fits on a motorcycle," not the item type.
+model DeliveryCategory {
   id          String   @id @default(cuid())
-  rideType    RideType @unique
-  baseFare    Float
-  perKm       Float
-  perMinute   Float
-  currency    String   @default("UGX")
+  name        String   @unique
+  icon        String?
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  deliveries  Delivery[]
+  pricingRule DeliveryPricingRule?
+}
+
+model DeliveryPricingRule {
+  id         String           @id @default(cuid())
+  categoryId String           @unique
+  category   DeliveryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  baseFare   Float
+  perKm      Float
+  perMinute  Float
+  currency   String           @default("UGX")
+  updatedAt  DateTime         @updatedAt
 }
 
 model PushSubscription {
@@ -307,11 +407,11 @@ model PushSubscription {
 }
 
 model PushBroadcastLog {
-  id         String   @id @default(cuid())
-  title      String
-  body       String
-  url        String?
-  sentCount  Int
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  url         String?
+  sentCount   Int
   failedCount Int
-  createdAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
 }

@@ -63,7 +63,11 @@ export default function AdminPricingPage() {
     <div>
       <h1 className="mb-6 text-2xl font-bold">Pricing rules</h1>
       <p className="mb-4 text-sm text-neutral-600">
-        Shared fare used for both Passenger and Package Delivery requests.
+        Fare used for passenger ride requests. Delivery pricing is managed separately under{" "}
+        <a href="/admin/delivery-categories" className="underline hover:text-black">
+          Delivery categories
+        </a>
+        .
       </p>
       <div className="grid gap-4 lg:grid-cols-3">
         {RIDE_TYPES.map((rt) => {

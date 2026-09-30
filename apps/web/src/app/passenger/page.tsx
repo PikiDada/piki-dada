@@ -2,23 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Banknote, Crosshair, Package, User, type LucideIcon } from "lucide-react";
+import Link from "next/link";
+import { Banknote, Crosshair, Package, User } from "lucide-react";
 import { PlaceInput } from "@/components/maps/place-input";
 import { TripMap } from "@/components/maps/trip-map";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type { LatLng, RideType, Trip } from "@/lib/types";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
-
-// Line icons rather than colour emoji: emoji render differently on every platform
-// and sit oddly against the rest of the app's iconography.
-const RIDE_TYPES: { value: RideType; label: string; icon: LucideIcon }[] = [
-  { value: "BODA", label: "Passenger", icon: User },
-  { value: "BODA", label: "Package Delivery", icon: Package },
-];
-
 
 export default function PassengerBookingPage() {
   const router = useRouter();
@@ -27,7 +19,6 @@ export default function PassengerBookingPage() {
   const [destinationAddress, setDestinationAddress] = useState("");
   const [destination, setDestination] = useState<LatLng | undefined>();
   const rideType: RideType = "BODA";
-  const [serviceLabel, setServiceLabel] = useState(RIDE_TYPES[0].label);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -94,6 +85,28 @@ export default function PassengerBookingPage() {
           <CardTitle className="text-xl">Where to?</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* Ride vs delivery are separate flows with genuinely different shapes (a rider
+              travels with you; a delivery has separate pickup/drop-off contacts who often
+              aren't you) rather than two labels over the same request, so this switches page
+              entirely instead of toggling a field inline. */}
+          <div className="grid grid-cols-2 gap-2 pb-1">
+            <button
+              type="button"
+              aria-pressed
+              className="flex flex-col items-center gap-1 rounded-2xl border border-neutral-900 bg-neutral-900 py-3.5 text-sm font-medium text-white shadow-card transition-all duration-200 ease-out active:scale-[0.985]"
+            >
+              <User className="h-5 w-5" strokeWidth={2.2} aria-hidden />
+              Book a ride
+            </button>
+            <Link
+              href="/passenger/delivery/new"
+              className="flex flex-col items-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 py-3.5 text-sm font-medium text-neutral-700 transition-all duration-200 ease-out hover:border-neutral-300 hover:bg-white hover:shadow-card active:scale-[0.985]"
+            >
+              <Package className="h-5 w-5" strokeWidth={1.8} aria-hidden />
+              Send a delivery
+            </Link>
+          </div>
+
           <PlaceInput
             placeholder="Pickup location"
             value={pickupAddress}
@@ -121,35 +134,6 @@ export default function PassengerBookingPage() {
               setDestination(location);
             }}
           />
-
-          <div className="pt-1">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
-              Ride type
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {RIDE_TYPES.map(({ icon: Icon, ...rt }) => (
-                <button
-                  key={rt.label}
-                  type="button"
-                  aria-pressed={serviceLabel === rt.label}
-                  onClick={() => setServiceLabel(rt.label)}
-                  className={cn(
-                    "flex flex-col items-center gap-1 rounded-2xl border py-3.5 text-sm font-medium transition-all duration-200 ease-out active:scale-[0.985]",
-                    serviceLabel === rt.label
-                      ? "border-neutral-900 bg-neutral-900 text-white shadow-card"
-                      : "border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:shadow-card",
-                  )}
-                >
-                  <Icon
-                    className="h-5 w-5"
-                    strokeWidth={serviceLabel === rt.label ? 2.2 : 1.8}
-                    aria-hidden
-                  />
-                  {rt.label}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* A labelled row, not a centred box -- it reads as a setting you could
               one day change rather than a stray notice. */}

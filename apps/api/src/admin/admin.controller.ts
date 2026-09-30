@@ -22,6 +22,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminService } from './admin.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { CreateCouponDto } from './dto/create-coupon.dto';
+import { CreateDeliveryCategoryDto } from './dto/create-delivery-category.dto';
+import { UpdateDeliveryCategoryDto } from './dto/update-delivery-category.dto';
 import { BroadcastPushDto } from './dto/broadcast-push.dto';
 import { SettleRiderDebtDto } from './dto/settle-rider-debt.dto';
 import { PushService } from '../push/push.service';
@@ -50,7 +52,9 @@ export class AdminController {
   @Get('finance/range')
   getFinanceForRange(@Query('from') from: string, @Query('to') to: string) {
     if (!from || !to) {
-      throw new BadRequestException('"from" and "to" query params are required');
+      throw new BadRequestException(
+        '"from" and "to" query params are required',
+      );
     }
     return this.adminService.getFinanceForRange(new Date(from), new Date(to));
   }
@@ -71,8 +75,17 @@ export class AdminController {
     @Param('id') id: string,
     @Body() dto: SettleRiderDebtDto,
   ) {
-    const result = await this.adminService.settleRiderDebt(id, dto.amount, dto.note);
-    await this.auditLog.log(admin.id, 'rider.wallet.settle', { type: 'Driver', id }, { ...dto });
+    const result = await this.adminService.settleRiderDebt(
+      id,
+      dto.amount,
+      dto.note,
+    );
+    await this.auditLog.log(
+      admin.id,
+      'rider.wallet.settle',
+      { type: 'Driver', id },
+      { ...dto },
+    );
     return result;
   }
 
@@ -81,22 +94,36 @@ export class AdminController {
     return this.adminService.listUsers(role);
   }
 
+  @Get('users/:id')
+  getUserDetail(@Param('id') id: string) {
+    return this.adminService.getUserDetail(id);
+  }
+
   @Patch('users/:id/suspend')
-  async suspendUser(@CurrentUser() admin: { id: string }, @Param('id') id: string) {
+  async suspendUser(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+  ) {
     const result = await this.adminService.setUserActive(id, false);
     await this.auditLog.log(admin.id, 'user.suspend', { type: 'User', id });
     return result;
   }
 
   @Patch('users/:id/activate')
-  async activateUser(@CurrentUser() admin: { id: string }, @Param('id') id: string) {
+  async activateUser(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+  ) {
     const result = await this.adminService.setUserActive(id, true);
     await this.auditLog.log(admin.id, 'user.activate', { type: 'User', id });
     return result;
   }
 
   @Delete('users/:id')
-  async deleteUser(@CurrentUser() admin: { id: string }, @Param('id') id: string) {
+  async deleteUser(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+  ) {
     if (id === admin.id) {
       throw new BadRequestException('You cannot delete your own account');
     }
@@ -106,7 +133,10 @@ export class AdminController {
   }
 
   @Patch('users/:id/promote')
-  async promoteUser(@CurrentUser() admin: { id: string }, @Param('id') id: string) {
+  async promoteUser(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+  ) {
     const result = await this.adminService.promoteToAdmin(id);
     await this.auditLog.log(admin.id, 'user.promote', { type: 'User', id });
     return result;
@@ -115,6 +145,63 @@ export class AdminController {
   @Get('trips')
   listTrips() {
     return this.adminService.listTrips();
+  }
+
+  @Get('deliveries')
+  listDeliveries() {
+    return this.adminService.listDeliveries();
+  }
+
+  @Get('delivery-categories')
+  listDeliveryCategories() {
+    return this.adminService.listDeliveryCategories();
+  }
+
+  @Post('delivery-categories')
+  async createDeliveryCategory(
+    @CurrentUser() admin: { id: string },
+    @Body() dto: CreateDeliveryCategoryDto,
+  ) {
+    const result = await this.adminService.createDeliveryCategory(dto);
+    await this.auditLog.log(
+      admin.id,
+      'delivery-category.create',
+      { type: 'DeliveryCategory', id: result.id },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Patch('delivery-categories/:id')
+  async updateDeliveryCategory(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpdateDeliveryCategoryDto,
+  ) {
+    const result = await this.adminService.updateDeliveryCategory(id, dto);
+    await this.auditLog.log(
+      admin.id,
+      'delivery-category.update',
+      { type: 'DeliveryCategory', id },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Patch('delivery-categories/:id/pricing')
+  async upsertDeliveryPricing(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpsertPricingRuleDto,
+  ) {
+    const result = await this.adminService.upsertDeliveryPricingRule(id, dto);
+    await this.auditLog.log(
+      admin.id,
+      'delivery-pricing.upsert',
+      { type: 'DeliveryPricingRule', id },
+      { ...dto },
+    );
+    return result;
   }
 
   @Get('pricing')
@@ -128,11 +215,13 @@ export class AdminController {
     @Param('rideType') rideType: RideType,
     @Body() dto: UpsertPricingRuleDto,
   ) {
-    const result = await this.adminService.upsertPricingRule(
-      rideType as 'ECONOMY' | 'COMFORT' | 'BODA',
-      dto,
+    const result = await this.adminService.upsertPricingRule(rideType, dto);
+    await this.auditLog.log(
+      admin.id,
+      'pricing.upsert',
+      { type: 'PricingRule', id: rideType },
+      { ...dto },
     );
-    await this.auditLog.log(admin.id, 'pricing.upsert', { type: 'PricingRule', id: rideType }, { ...dto });
     return result;
   }
 
@@ -142,22 +231,43 @@ export class AdminController {
   }
 
   @Post('coupons')
-  async createCoupon(@CurrentUser() admin: { id: string }, @Body() dto: CreateCouponDto) {
+  async createCoupon(
+    @CurrentUser() admin: { id: string },
+    @Body() dto: CreateCouponDto,
+  ) {
     const result = await this.adminService.createCoupon(dto);
-    await this.auditLog.log(admin.id, 'coupon.create', { type: 'Coupon', id: result.id }, { ...dto });
+    await this.auditLog.log(
+      admin.id,
+      'coupon.create',
+      { type: 'Coupon', id: result.id },
+      { ...dto },
+    );
     return result;
   }
 
   @Patch('coupons/:id/deactivate')
-  async deactivateCoupon(@CurrentUser() admin: { id: string }, @Param('id') id: string) {
+  async deactivateCoupon(
+    @CurrentUser() admin: { id: string },
+    @Param('id') id: string,
+  ) {
     const result = await this.adminService.setCouponActive(id, false);
-    await this.auditLog.log(admin.id, 'coupon.deactivate', { type: 'Coupon', id });
+    await this.auditLog.log(admin.id, 'coupon.deactivate', {
+      type: 'Coupon',
+      id,
+    });
     return result;
   }
 
   @Post('push/broadcast')
-  async broadcastPush(@CurrentUser() admin: { id: string }, @Body() dto: BroadcastPushDto) {
-    const result = await this.pushService.broadcast(dto.title, dto.body, dto.url);
+  async broadcastPush(
+    @CurrentUser() admin: { id: string },
+    @Body() dto: BroadcastPushDto,
+  ) {
+    const result = await this.pushService.broadcast(
+      dto.title,
+      dto.body,
+      dto.url,
+    );
     await this.auditLog.log(admin.id, 'push.broadcast', undefined, { ...dto });
     return result;
   }
@@ -186,7 +296,10 @@ export class AdminController {
     let ext: string;
 
     if (isLegacyImagePdf) {
-      const attachUrl = doc.fileUrl.replace('/image/upload/', '/image/upload/fl_attachment/');
+      const attachUrl = doc.fileUrl.replace(
+        '/image/upload/',
+        '/image/upload/fl_attachment/',
+      );
       const attempt = await fetch(attachUrl);
       if (attempt.ok && attempt.headers.get('content-type')?.includes('pdf')) {
         buffer = Buffer.from(await attempt.arrayBuffer());
@@ -197,7 +310,9 @@ export class AdminController {
         const jpegUrl = doc.fileUrl.replace(/\.pdf$/i, '');
         const fallback = await fetch(jpegUrl);
         if (!fallback.ok) {
-          console.error(`[document-proxy] fallback ${fallback.status} for doc ${id}: ${jpegUrl}`);
+          console.error(
+            `[document-proxy] fallback ${fallback.status} for doc ${id}: ${jpegUrl}`,
+          );
           throw new NotFoundException('File could not be fetched from storage');
         }
         buffer = Buffer.from(await fallback.arrayBuffer());
@@ -207,12 +322,16 @@ export class AdminController {
     } else {
       const upstream = await fetch(doc.fileUrl);
       if (!upstream.ok) {
-        console.error(`[document-proxy] ${upstream.status} for doc ${id}: ${doc.fileUrl}`);
+        console.error(
+          `[document-proxy] ${upstream.status} for doc ${id}: ${doc.fileUrl}`,
+        );
         throw new NotFoundException('File could not be fetched from storage');
       }
       buffer = Buffer.from(await upstream.arrayBuffer());
       contentType = upstream.headers.get('content-type') ?? 'application/pdf';
-      ext = (doc.fileUrl.match(/\.(pdf|jpe?g|png|webp)$/i)?.[1] ?? 'bin').toLowerCase();
+      ext = (
+        doc.fileUrl.match(/\.(pdf|jpe?g|png|webp)$/i)?.[1] ?? 'bin'
+      ).toLowerCase();
     }
 
     const label = doc.type

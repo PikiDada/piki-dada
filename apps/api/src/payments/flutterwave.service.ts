@@ -6,8 +6,11 @@ import axios from 'axios';
 export class FlutterwaveService {
   constructor(private config: ConfigService) {}
 
+  // `kind` distinguishes a trip from a delivery in the webhook -- see the matching comment on
+  // StripeService.createCheckoutSession.
   async initializePayment(params: {
-    tripId: string;
+    referenceId: string;
+    kind: 'trip' | 'delivery';
     amount: number;
     currency: string;
     customerEmail: string;
@@ -16,12 +19,12 @@ export class FlutterwaveService {
     const res = await axios.post(
       'https://api.flutterwave.com/v3/payments',
       {
-        tx_ref: `trip-${params.tripId}-${Date.now()}`,
+        tx_ref: `${params.kind}-${params.referenceId}-${Date.now()}`,
         amount: params.amount,
         currency: params.currency,
         redirect_url: params.redirectUrl,
         customer: { email: params.customerEmail },
-        meta: { tripId: params.tripId },
+        meta: { referenceId: params.referenceId, kind: params.kind },
       },
       {
         headers: {

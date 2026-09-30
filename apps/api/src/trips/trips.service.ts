@@ -32,7 +32,11 @@ export class TripsService {
   async requestTrip(passengerId: string, dto: RequestTripDto) {
     const pickup = { lat: dto.pickupLat, lng: dto.pickupLng };
     const destination = { lat: dto.destinationLat, lng: dto.destinationLng };
-    const estimate = await this.pricing.estimateFare(dto.rideType, pickup, destination);
+    const estimate = await this.pricing.estimateFare(
+      dto.rideType,
+      pickup,
+      destination,
+    );
 
     const trip = await this.prisma.trip.create({
       data: {
@@ -54,7 +58,11 @@ export class TripsService {
       },
     });
 
-    const nearbyDrivers = await this.findNearbyDrivers(dto.rideType, pickup);
+    const nearbyDrivers = await this.pricing.findNearbyDrivers(
+      dto.rideType,
+      pickup,
+      SEARCH_RADIUS_KM,
+    );
     for (const driver of nearbyDrivers) {
       this.gateway.emitToUser(driver.userId, SOCKET_EVENTS.TRIP_REQUESTED, {
         tripId: trip.id,
@@ -70,38 +78,21 @@ export class TripsService {
     return { trip, candidateDriverCount: nearbyDrivers.length };
   }
 
-  private async findNearbyDrivers(rideType: string, pickup: { lat: number; lng: number }) {
-    const onlineDrivers = await this.prisma.driver.findMany({
-      where: {
-        isOnline: true,
-        approvalStatus: 'APPROVED',
-        currentLat: { not: null },
-        currentLng: { not: null },
-        vehicle: { rideType: rideType as never },
-      },
-    });
-
-    return onlineDrivers
-      .map((driver) => ({
-        ...driver,
-        distanceKm: this.pricing.haversineDistanceKm(pickup, {
-          lat: driver.currentLat!,
-          lng: driver.currentLng!,
-        }),
-      }))
-      .filter((driver) => driver.distanceKm <= SEARCH_RADIUS_KM)
-      .sort((a, b) => a.distanceKm - b.distanceKm);
-  }
-
   async acceptTrip(driverUserId: string, tripId: string) {
-    const driver = await this.prisma.driver.findUnique({ where: { userId: driverUserId } });
+    const driver = await this.prisma.driver.findUnique({
+      where: { userId: driverUserId },
+    });
     if (!driver) throw new NotFoundException('Rider not found');
 
     // The where clause's status check makes this update atomic at the DB level:
     // if two drivers race, only the first UPDATE...WHERE status='SEARCHING' matches a row.
     const result = await this.prisma.trip.updateMany({
       where: { id: tripId, status: TripStatus.SEARCHING },
-      data: { status: TripStatus.ACCEPTED, driverId: driver.id, acceptedAt: new Date() },
+      data: {
+        status: TripStatus.ACCEPTED,
+        driverId: driver.id,
+        acceptedAt: new Date(),
+      },
     });
     if (result.count === 0) {
       throw new BadRequestException('Trip is no longer available');
@@ -110,11 +101,19 @@ export class TripsService {
     const updated = this.decryptTripPhones(
       await this.prisma.trip.findUniqueOrThrow({
         where: { id: tripId },
-        include: { driver: { include: { vehicle: true, user: { omit: { passwordHash: true } } } } },
+        include: {
+          driver: {
+            include: { vehicle: true, user: { omit: { passwordHash: true } } },
+          },
+        },
       }),
     );
 
-    this.gateway.emitToUser(updated.passengerId, SOCKET_EVENTS.TRIP_ACCEPTED, updated);
+    this.gateway.emitToUser(
+      updated.passengerId,
+      SOCKET_EVENTS.TRIP_ACCEPTED,
+      updated,
+    );
     this.notifications.notifyUser(
       updated.passengerId,
       'Rider on the way',
@@ -124,7 +123,9 @@ export class TripsService {
   }
 
   async rejectTrip(driverUserId: string, tripId: string) {
-    this.gateway.emitToUser(driverUserId, SOCKET_EVENTS.TRIP_REJECTED, { tripId });
+    this.gateway.emitToUser(driverUserId, SOCKET_EVENTS.TRIP_REJECTED, {
+      tripId,
+    });
     return { success: true };
   }
 
@@ -187,7 +188,9 @@ export class TripsService {
       await this.prisma.trip.findUniqueOrThrow({
         where: { id: tripId },
         include: {
-          driver: { include: { vehicle: true, user: { omit: { passwordHash: true } } } },
+          driver: {
+            include: { vehicle: true, user: { omit: { passwordHash: true } } },
+          },
           passenger: { omit: { passwordHash: true } },
           payment: true,
         },
@@ -213,9 +216,16 @@ export class TripsService {
     return {
       ...trip,
       driver: trip.driver
-        ? { ...trip.driver, user: trip.driver.user ? decryptUserPhone(trip.driver.user) : trip.driver.user }
+        ? {
+            ...trip.driver,
+            user: trip.driver.user
+              ? decryptUserPhone(trip.driver.user)
+              : trip.driver.user,
+          }
         : trip.driver,
-      passenger: trip.passenger ? decryptUserPhone(trip.passenger) : trip.passenger,
+      passenger: trip.passenger
+        ? decryptUserPhone(trip.passenger)
+        : trip.passenger,
     };
   }
 
@@ -250,7 +260,13 @@ export class TripsService {
     }
 
     const rating = await this.prisma.rating.create({
-      data: { tripId, fromUserId: raterId, toUserId, stars: dto.stars, comment: dto.comment },
+      data: {
+        tripId,
+        fromUserId: raterId,
+        toUserId,
+        stars: dto.stars,
+        comment: dto.comment,
+      },
     });
 
     if (isPassenger && trip.driverId) {
@@ -284,7 +300,9 @@ export class TripsService {
     const trip = await this.prisma.trip.findUnique({
       where: { id: tripId },
       include: {
-        driver: { include: { vehicle: true, user: { omit: { passwordHash: true } } } },
+        driver: {
+          include: { vehicle: true, user: { omit: { passwordHash: true } } },
+        },
         passenger: { omit: { passwordHash: true } },
         payment: true,
       },

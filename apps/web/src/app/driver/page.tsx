@@ -21,12 +21,23 @@ interface IncomingRequest {
   etaToPickupMin?: number;
 }
 
+interface IncomingDeliveryRequest {
+  deliveryId: string;
+  pickupAddress: string;
+  destinationAddress: string;
+  itemDescription: string;
+  fare: number;
+  distanceToPickupKm?: number;
+  etaToPickupMin?: number;
+}
+
 export default function DriverDashboardPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
+  const [incomingDelivery, setIncomingDelivery] = useState<IncomingDeliveryRequest | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [onlineBlockMsg, setOnlineBlockMsg] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -53,20 +64,23 @@ export default function DriverDashboardPage() {
   useEffect(() => {
     const socket = getSocket();
     const handleRequest = (data: IncomingRequest) => setIncoming(data);
+    const handleDeliveryRequest = (data: IncomingDeliveryRequest) => setIncomingDelivery(data);
     socket.on(SOCKET_EVENTS.TRIP_REQUESTED, handleRequest);
+    socket.on(SOCKET_EVENTS.DELIVERY_REQUESTED, handleDeliveryRequest);
     return () => {
       socket.off(SOCKET_EVENTS.TRIP_REQUESTED, handleRequest);
+      socket.off(SOCKET_EVENTS.DELIVERY_REQUESTED, handleDeliveryRequest);
     };
   }, []);
 
   useEffect(() => {
-    if (incoming) {
+    if (incoming || incomingDelivery) {
       startRingtone();
     } else {
       stopRingtone();
     }
     return () => stopRingtone();
-  }, [incoming]);
+  }, [incoming, incomingDelivery]);
 
   useEffect(() => {
     if (!profile?.isOnline) {
@@ -122,6 +136,23 @@ export default function DriverDashboardPage() {
     setIncoming(null);
   }
 
+  async function handleAcceptDelivery() {
+    if (!incomingDelivery) return;
+    try {
+      await apiFetch(`/deliveries/${incomingDelivery.deliveryId}/accept`, { method: "PATCH" });
+      router.push(`/driver/delivery/${incomingDelivery.deliveryId}`);
+    } catch (err) {
+      setAcceptError(err instanceof Error ? err.message : "Delivery is no longer available");
+      setIncomingDelivery(null);
+    }
+  }
+
+  async function handleRejectDelivery() {
+    if (!incomingDelivery) return;
+    await apiFetch(`/deliveries/${incomingDelivery.deliveryId}/reject`, { method: "PATCH" });
+    setIncomingDelivery(null);
+  }
+
   if (!profile) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
@@ -157,6 +188,32 @@ export default function DriverDashboardPage() {
               Accept
             </Button>
             <Button variant="outline" className="flex-1" onClick={handleReject}>
+              Reject
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {incomingDelivery && (
+        <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-black bg-white p-4 shadow-xl">
+          <p className="font-semibold">New delivery request</p>
+          <p className="text-sm text-neutral-600">
+            {incomingDelivery.pickupAddress} → {incomingDelivery.destinationAddress}
+          </p>
+          <p className="text-sm text-neutral-600">{incomingDelivery.itemDescription}</p>
+          <p className="text-lg font-bold">{incomingDelivery.fare?.toLocaleString()} UGX</p>
+          {incomingDelivery.distanceToPickupKm != null && (
+            <p className="mt-1 text-sm font-medium text-neutral-700">
+              {incomingDelivery.distanceToPickupKm.toFixed(1)} km away
+              {incomingDelivery.etaToPickupMin != null &&
+                ` · ~${incomingDelivery.etaToPickupMin} min to pickup`}
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <Button className="flex-1" onClick={handleAcceptDelivery}>
+              Accept
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={handleRejectDelivery}>
               Reject
             </Button>
           </div>

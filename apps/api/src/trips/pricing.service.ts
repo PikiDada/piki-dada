@@ -62,7 +62,10 @@ export class PricingService {
   // Routes API is and is still far closer to reality than a straight line --
   // a boda can thread some routes a car can't, so this may run slightly long
   // rather than short, which errs in the passenger's favor, not the platform's.
-  private async computeRoadRoute(pickup: LatLng, destination: LatLng): Promise<RoadRoute | null> {
+  private async computeRoadRoute(
+    pickup: LatLng,
+    destination: LatLng,
+  ): Promise<RoadRoute | null> {
     const apiKey = this.config.get<string>('GOOGLE_ROUTES_API_KEY');
     if (!apiKey) return null;
 
@@ -70,8 +73,16 @@ export class PricingService {
       const res = await axios.post(
         'https://routes.googleapis.com/directions/v2:computeRoutes',
         {
-          origin: { location: { latLng: { latitude: pickup.lat, longitude: pickup.lng } } },
-          destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+          origin: {
+            location: {
+              latLng: { latitude: pickup.lat, longitude: pickup.lng },
+            },
+          },
+          destination: {
+            location: {
+              latLng: { latitude: destination.lat, longitude: destination.lng },
+            },
+          },
           travelMode: 'DRIVE',
           units: 'METRIC',
         },
@@ -87,17 +98,26 @@ export class PricingService {
 
       const route = res.data?.routes?.[0];
       const distanceMeters = route?.distanceMeters;
-      const durationSec = Number(String(route?.duration ?? '').replace('s', ''));
+      const durationSec = Number(
+        String(route?.duration ?? '').replace('s', ''),
+      );
 
       if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSec)) {
-        this.logger.warn('Routes API returned an unparseable response, falling back to estimated distance');
+        this.logger.warn(
+          'Routes API returned an unparseable response, falling back to estimated distance',
+        );
         return null;
       }
 
-      return { distanceKm: distanceMeters / 1000, durationMin: durationSec / 60 };
+      return {
+        distanceKm: distanceMeters / 1000,
+        durationMin: durationSec / 60,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Routes API call failed, falling back to estimated distance: ${message}`);
+      this.logger.warn(
+        `Routes API call failed, falling back to estimated distance: ${message}`,
+      );
       return null;
     }
   }
@@ -115,10 +135,13 @@ export class PricingService {
         data: { rideType, ...this.defaultRuleFor(rideType) },
       }));
 
-    const distanceKm = road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
-    const durationMin = road?.durationMin ?? (distanceKm / AVERAGE_SPEED_KMH) * 60;
+    const distanceKm =
+      road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
+    const durationMin =
+      road?.durationMin ?? (distanceKm / AVERAGE_SPEED_KMH) * 60;
 
-    const fare = rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
+    const fare =
+      rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
 
     return {
       rideType,
@@ -138,5 +161,77 @@ export class PricingService {
       default:
         return { baseFare: 3000, perKm: 900, perMinute: 100, currency: 'UGX' };
     }
+  }
+
+  // Same fare math as estimateFare, keyed by delivery category instead of rideType. Defaults
+  // to BODA-like rates for a category that has no pricing rule configured yet, rather than
+  // failing a booking outright — matches estimateFare's auto-provisioning behavior above.
+  async estimateDeliveryFare(
+    categoryId: string,
+    pickup: LatLng,
+    destination: LatLng,
+  ) {
+    const straightLineKm = this.haversineDistanceKm(pickup, destination);
+
+    const [road, existingRule] = await Promise.all([
+      this.computeRoadRoute(pickup, destination),
+      this.prisma.deliveryPricingRule.findUnique({ where: { categoryId } }),
+    ]);
+    const rule =
+      existingRule ??
+      (await this.prisma.deliveryPricingRule.create({
+        data: {
+          categoryId,
+          baseFare: 1500,
+          perKm: 500,
+          perMinute: 50,
+          currency: 'UGX',
+        },
+      }));
+
+    const distanceKm =
+      road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
+    const durationMin =
+      road?.durationMin ?? (distanceKm / AVERAGE_SPEED_KMH) * 60;
+
+    const fare =
+      rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
+
+    return {
+      categoryId,
+      distanceKm: Number(distanceKm.toFixed(2)),
+      durationMin: Number(durationMin.toFixed(1)),
+      fare: Math.round(fare),
+      currency: rule.currency,
+    };
+  }
+
+  // Shared by TripsService and DeliveriesService — pure geo-matching, no money involved, so
+  // safe to share rather than duplicate. Deliveries always call this with rideType = 'BODA'.
+  async findNearbyDrivers(
+    rideType: RideType,
+    pickup: LatLng,
+    radiusKm: number,
+  ) {
+    const onlineDrivers = await this.prisma.driver.findMany({
+      where: {
+        isOnline: true,
+        approvalStatus: 'APPROVED',
+        currentLat: { not: null },
+        currentLng: { not: null },
+        vehicle: { rideType },
+      },
+    });
+
+    return onlineDrivers
+      .map((driver) => ({
+        ...driver,
+        distanceKm: this.haversineDistanceKm(pickup, {
+          lat: driver.currentLat!,
+          lng: driver.currentLng!,
+        }),
+      }))
+      .filter((driver) => driver.distanceKm <= radiusKm)
+      .sort((a, b) => a.distanceKm - b.distanceKm);
   }
 }
