@@ -12,10 +12,18 @@ const AVERAGE_SPEED_KMH = 28;
 // road network -- not exact for any given trip, but far closer than 1x.
 const ROAD_DISTANCE_FALLBACK_FACTOR = 1.3;
 const ROUTES_API_TIMEOUT_MS = 4000;
+// Cash is how most trips/deliveries get paid, and nobody wants to carry exact change for a
+// fare like 7,432 UGX -- round every fare (rides and deliveries) to the nearest note
+// denomination instead.
+const FARE_ROUNDING_UNIT = 500;
 
 export interface LatLng {
   lat: number;
   lng: number;
+}
+
+function roundToNearest(amount: number, unit: number): number {
+  return Math.round(amount / unit) * unit;
 }
 
 interface RoadRoute {
@@ -147,7 +155,7 @@ export class PricingService {
       rideType,
       distanceKm: Number(distanceKm.toFixed(2)),
       durationMin: Number(durationMin.toFixed(1)),
-      fare: Math.round(fare),
+      fare: roundToNearest(fare, FARE_ROUNDING_UNIT),
       currency: rule.currency,
     };
   }
@@ -215,7 +223,7 @@ export class PricingService {
       sizeTierId,
       distanceKm: Number(distanceKm.toFixed(2)),
       durationMin: Number(durationMin.toFixed(1)),
-      fare: Math.round(baseFare + surchargeTotal),
+      fare: roundToNearest(baseFare + surchargeTotal, FARE_ROUNDING_UNIT),
       currency: rule.currency,
     };
   }
