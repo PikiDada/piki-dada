@@ -12,6 +12,7 @@ const AVERAGE_SPEED_KMH = 28;
 // road network -- not exact for any given trip, but far closer than 1x.
 const ROAD_DISTANCE_FALLBACK_FACTOR = 1.3;
 const ROUTES_API_TIMEOUT_MS = 4000;
+const OSRM_TIMEOUT_MS = 4000;
 // Cash is how most trips/deliveries get paid, and nobody wants to carry exact change for a
 // fare like 7,432 UGX -- round every fare (rides and deliveries) to the nearest note
 // denomination instead.
@@ -59,6 +60,67 @@ export class PricingService {
     return Math.round((distanceKm / AVERAGE_SPEED_KMH) * 60);
   }
 
+  // Three-layer fallback, cheapest/free first: self-hosted OSRM (if OSRM_URL is configured)
+  // -> Google Routes API (if GOOGLE_ROUTES_API_KEY is configured) -> straight-line estimate
+  // in the caller. Each layer never throws -- a routing outage, or OSRM simply not being
+  // deployed yet, never blocks a passenger from booking a trip, it just prices a bit less
+  // precisely.
+  private async computeRoadRoute(
+    pickup: LatLng,
+    destination: LatLng,
+  ): Promise<RoadRoute | null> {
+    const osrmUrl = this.config.get<string>('OSRM_URL');
+    if (osrmUrl) {
+      const osrmRoute = await this.computeOsrmRoute(
+        osrmUrl,
+        pickup,
+        destination,
+      );
+      if (osrmRoute) return osrmRoute;
+      this.logger.warn(
+        'OSRM route computation failed, falling back to Google Routes API',
+      );
+    }
+    return this.computeGoogleRoute(pickup, destination);
+  }
+
+  // Same road network a car would use -- OSRM's default profile is "car", and there's no
+  // dedicated motorcycle profile to switch to. Matches the same DRIVE-mode choice already
+  // made for Google Routes below, for the same reason (see its comment).
+  private async computeOsrmRoute(
+    osrmUrl: string,
+    pickup: LatLng,
+    destination: LatLng,
+  ): Promise<RoadRoute | null> {
+    try {
+      // OSRM takes coordinates as lng,lat -- the opposite order from Google's lat,lng above.
+      // Easy to get backwards; this is the one line that matters if routes come back wrong.
+      const url =
+        `${osrmUrl.replace(/\/+$/, '')}/route/v1/driving/` +
+        `${pickup.lng},${pickup.lat};${destination.lng},${destination.lat}` +
+        '?overview=false';
+      const res = await axios.get(url, { timeout: OSRM_TIMEOUT_MS });
+
+      const route = res.data?.routes?.[0];
+      const distanceMeters = route?.distance;
+      const durationSec = route?.duration;
+
+      if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSec)) {
+        this.logger.warn('OSRM returned an unparseable response');
+        return null;
+      }
+
+      return {
+        distanceKm: distanceMeters / 1000,
+        durationMin: durationSec / 60,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`OSRM call failed: ${message}`);
+      return null;
+    }
+  }
+
   // Real road distance/duration via Google's Routes API. Returns null (never
   // throws) if the key isn't configured, the call fails, or the response
   // doesn't parse -- callers fall back to an estimate so a routing outage
@@ -70,7 +132,7 @@ export class PricingService {
   // Routes API is and is still far closer to reality than a straight line --
   // a boda can thread some routes a car can't, so this may run slightly long
   // rather than short, which errs in the passenger's favor, not the platform's.
-  private async computeRoadRoute(
+  private async computeGoogleRoute(
     pickup: LatLng,
     destination: LatLng,
   ): Promise<RoadRoute | null> {

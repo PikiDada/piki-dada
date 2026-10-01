@@ -50,6 +50,41 @@ services:
   # apps/api/.env.example's SMTP_* section). SES is reached over the public internet
   # regardless of where this stack runs, so it needs no service in this compose file and no
   # reconfiguration when this moves between hosts.
+
+  # Self-hosted road-distance/duration routing (free, no per-request cost) -- see
+  # OSRM_URL's comment in apps/api/.env.example for where this fits in the fallback chain.
+  # Deliberately NOT wired into api's `depends_on`: the app already falls back to Google
+  # Routes (or a straight-line estimate) if this is absent or down, so it's fine to bring the
+  # rest of the stack up before this is ready.
+  #
+  # Unlike every other service here, this one needs a one-time (or periodic, if you want
+  # fresher map data later) data-preparation step BEFORE it can serve anything -- osrm-routed
+  # refuses to start without a pre-processed .osrm dataset, and producing one from a raw OSM
+  # extract takes real time/disk/CPU, so it's deliberately not automated into a `depends_on`
+  # init container the way minio-init is. Run once on the server, from this repo's root:
+  #
+  #   docker volume create pikidada_osrm_data
+  #   curl -L -o uganda-latest.osm.pbf https://download.geofabrik.de/africa/uganda-latest.osm.pbf
+  #   docker run -t -v "$(pwd):/data" -v pikidada_osrm_data:/output osrm/osrm-backend \
+  #     osrm-extract -p /opt/car.lua /data/uganda-latest.osm.pbf
+  #   mv uganda-latest.osrm* /var/lib/docker/volumes/pikidada_osrm_data/_data/ 2>/dev/null || true
+  #   docker run -t -v pikidada_osrm_data:/data osrm/osrm-backend \
+  #     osrm-partition /data/uganda-latest.osrm
+  #   docker run -t -v pikidada_osrm_data:/data osrm/osrm-backend \
+  #     osrm-customize /data/uganda-latest.osrm
+  #
+  # (osrm-extract's exact output-path handling varies by image version -- check what lands
+  # where before the mv step; simplest is often to run osrm-extract with /data mounted
+  # directly to the same volume osrm-routed will read from, skipping the copy entirely.)
+  # The car profile is intentional, not a placeholder -- see pricing.service.ts's comment on
+  # computeOsrmRoute for why there's no dedicated motorcycle profile to use instead.
+  osrm:
+    image: osrm/osrm-backend
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/uganda-latest.osrm
+    volumes:
+      - osrm_data:/data
+
   api:
     build:
       context: .
@@ -97,5 +132,6 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  osrm_data:
   caddy_data:
   caddy_config:

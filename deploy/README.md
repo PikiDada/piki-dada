@@ -22,6 +22,11 @@ for each decision is in the approved migration plan; this is the condensed check
    console (it gives you exact SPF/DKIM records — confirm they show "verified" there, don't
    just assume), request production access, create SMTP credentials, fill in `SMTP_*` in
    `apps/api/.env`. See that file's comments for the full rundown.
+5. **OSRM (self-hosted routing, optional but recommended)**: run the one-time data-prep
+   commands in `docker-compose.yml`'s comment on the `osrm` service, then set `OSRM_URL` in
+   `apps/api/.env`. Not required for Phase 1/2 below — the app falls back to Google Routes
+   (or a straight-line estimate) automatically if this isn't set up yet, so it's fine to do
+   this after cutover once the site is already stable.
 
 ## Phase 1 — Dry run (still no impact on the live site)
 
