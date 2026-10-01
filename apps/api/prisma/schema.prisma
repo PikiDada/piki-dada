@@ -226,11 +226,19 @@ model Trip {
   completedAt        DateTime?
   cancelledAt        DateTime?
   cancellationReason String?
+  // Plain id, not a relation -- it's an attribution field (who actually cancelled: the
+  // passenger or the driver), not a navigable relationship, so it doesn't need a User.trips
+  // back-reference the way passengerId/driverId do. Used to tell a passenger who cancels their
+  // own requests (the thing that racks up billable Google Routes API calls for nothing) apart
+  // from a driver backing out after accepting, which doesn't trigger a new API call.
+  cancelledByUserId  String?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
   payment Payment?
   ratings Rating[]
+
+  @@index([cancelledByUserId, cancelledAt])
 }
 
 model Payment {
@@ -290,10 +298,14 @@ model Delivery {
   deliveredAt          DateTime?
   cancelledAt          DateTime?
   cancellationReason   String?
+  // Same attribution field as Trip.cancelledByUserId -- see its comment.
+  cancelledByUserId    String?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
   payment DeliveryPayment?
+
+  @@index([cancelledByUserId, cancelledAt])
 }
 
 model DeliveryPayment {

@@ -149,6 +149,13 @@ export class TripsService {
         status: dto.status,
         cancellationReason: dto.cancellationReason,
         ...(timestampField ? { [timestampField]: new Date() } : {}),
+        // Who actually cancelled -- a passenger cancelling their own request is what racks up
+        // billable Google Routes API calls for nothing; a driver backing out after accepting
+        // doesn't trigger a new one. See the admin over-cancellation flag, which only counts
+        // the former.
+        ...(dto.status === TripStatus.CANCELLED
+          ? { cancelledByUserId: userId }
+          : {}),
       },
     });
 

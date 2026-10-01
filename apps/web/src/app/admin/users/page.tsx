@@ -14,6 +14,8 @@ interface AdminUser {
   role: string;
   isActive: boolean;
   emailVerifiedAt: string | null;
+  selfCancelledRecently: number;
+  isFlaggedForCancellations: boolean;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -22,7 +24,7 @@ const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Admin",
 };
 
-type Category = "ALL" | "PASSENGER" | "DRIVER" | "ADMIN" | "SUSPENDED";
+type Category = "ALL" | "PASSENGER" | "DRIVER" | "ADMIN" | "SUSPENDED" | "FLAGGED";
 
 const CATEGORIES: { value: Category; label: string }[] = [
   { value: "ALL", label: "All" },
@@ -30,6 +32,7 @@ const CATEGORIES: { value: Category; label: string }[] = [
   { value: "DRIVER", label: "Riders" },
   { value: "ADMIN", label: "Admins" },
   { value: "SUSPENDED", label: "Suspended" },
+  { value: "FLAGGED", label: "Over-cancelling" },
 ];
 
 function Spinner() {
@@ -58,10 +61,18 @@ export default function AdminUsersPage() {
   }, []);
 
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { ALL: users.length, PASSENGER: 0, DRIVER: 0, ADMIN: 0, SUSPENDED: 0 };
+    const c: Record<Category, number> = {
+      ALL: users.length,
+      PASSENGER: 0,
+      DRIVER: 0,
+      ADMIN: 0,
+      SUSPENDED: 0,
+      FLAGGED: 0,
+    };
     for (const u of users) {
       if (u.role === "PASSENGER" || u.role === "DRIVER" || u.role === "ADMIN") c[u.role] += 1;
       if (!u.isActive) c.SUSPENDED += 1;
+      if (u.isFlaggedForCancellations) c.FLAGGED += 1;
     }
     return c;
   }, [users]);
@@ -69,6 +80,7 @@ export default function AdminUsersPage() {
   const filtered = useMemo(() => {
     if (category === "ALL") return users;
     if (category === "SUSPENDED") return users.filter((u) => !u.isActive);
+    if (category === "FLAGGED") return users.filter((u) => u.isFlaggedForCancellations);
     return users.filter((u) => u.role === category);
   }, [users, category]);
 
@@ -150,6 +162,14 @@ export default function AdminUsersPage() {
                   {!u.emailVerifiedAt && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                       Unverified
+                    </span>
+                  )}
+                  {u.isFlaggedForCancellations && (
+                    <span
+                      className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+                      title={`${u.selfCancelledRecently} self-cancelled requests in the last 7 days`}
+                    >
+                      Over-cancelling ({u.selfCancelledRecently})
                     </span>
                   )}
                 </p>

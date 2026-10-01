@@ -21,6 +21,13 @@ import { UpdateDeliverySurchargeDto } from './dto/update-delivery-surcharge.dto'
 import { decryptUserPhone } from '../common/field-encryption';
 import { PLATFORM_COMMISSION_RATE } from '../trips/trips.service';
 
+// A passenger/sender cancelling their own request is what racks up billable Google Routes API
+// calls (charged at request time) for nothing -- a driver/rider backing out after accepting
+// doesn't trigger a new one, so it isn't counted here. Visibility only: admin reviews and
+// decides, nothing is auto-restricted.
+export const OVER_CANCELLATION_WINDOW_DAYS = 7;
+export const OVER_CANCELLATION_THRESHOLD = 5;
+
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
@@ -301,7 +308,53 @@ export class AdminService {
       omit: { passwordHash: true },
       orderBy: { createdAt: 'desc' },
     });
-    return users.map(decryptUserPhone);
+    const selfCancelCounts = await this.getSelfCancellationCounts();
+    return users.map((u) => {
+      const selfCancelledRecently = selfCancelCounts.get(u.id) ?? 0;
+      return {
+        ...decryptUserPhone(u),
+        selfCancelledRecently,
+        isFlaggedForCancellations:
+          selfCancelledRecently >= OVER_CANCELLATION_THRESHOLD,
+      };
+    });
+  }
+
+  // Counts, per user, how many of their OWN requests they cancelled themselves in the last
+  // OVER_CANCELLATION_WINDOW_DAYS -- fetched and grouped in JS rather than a DB-side groupBy,
+  // since "cancelledByUserId equals passengerId/senderId" is a same-row column comparison
+  // Prisma's query builder can't express directly, and this table scan is small (admin-page
+  // scale, not a hot path).
+  private async getSelfCancellationCounts(): Promise<Map<string, number>> {
+    const since = new Date(
+      Date.now() - OVER_CANCELLATION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const [cancelledTrips, cancelledDeliveries] = await Promise.all([
+      this.prisma.trip.findMany({
+        where: { status: TripStatus.CANCELLED, cancelledAt: { gte: since } },
+        select: { passengerId: true, cancelledByUserId: true },
+      }),
+      this.prisma.delivery.findMany({
+        where: {
+          status: DeliveryStatus.CANCELLED,
+          cancelledAt: { gte: since },
+        },
+        select: { senderId: true, cancelledByUserId: true },
+      }),
+    ]);
+
+    const counts = new Map<string, number>();
+    for (const t of cancelledTrips) {
+      if (t.cancelledByUserId && t.cancelledByUserId === t.passengerId) {
+        counts.set(t.passengerId, (counts.get(t.passengerId) ?? 0) + 1);
+      }
+    }
+    for (const d of cancelledDeliveries) {
+      if (d.cancelledByUserId && d.cancelledByUserId === d.senderId) {
+        counts.set(d.senderId, (counts.get(d.senderId) ?? 0) + 1);
+      }
+    }
+    return counts;
   }
 
   async getUserDetail(userId: string) {
@@ -317,7 +370,16 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    const [passengerTrips, driverTrips, ratingsReceived] = await Promise.all([
+    const since = new Date(
+      Date.now() - OVER_CANCELLATION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const [
+      passengerTrips,
+      driverTrips,
+      ratingsReceived,
+      selfCancelledTrips,
+      selfCancelledDeliveries,
+    ] = await Promise.all([
       this.prisma.trip.findMany({
         where: { passengerId: userId },
         orderBy: { createdAt: 'desc' },
@@ -338,13 +400,33 @@ export class AdminService {
         take: 20,
         include: { fromUser: { select: { name: true } } },
       }),
+      this.prisma.trip.count({
+        where: {
+          passengerId: userId,
+          cancelledByUserId: userId,
+          status: TripStatus.CANCELLED,
+          cancelledAt: { gte: since },
+        },
+      }),
+      this.prisma.delivery.count({
+        where: {
+          senderId: userId,
+          cancelledByUserId: userId,
+          status: DeliveryStatus.CANCELLED,
+          cancelledAt: { gte: since },
+        },
+      }),
     ]);
+    const selfCancelledRecently = selfCancelledTrips + selfCancelledDeliveries;
 
     return {
       ...decryptUserPhone(user),
       passengerTrips,
       driverTrips,
       ratingsReceived,
+      selfCancelledRecently,
+      isFlaggedForCancellations:
+        selfCancelledRecently >= OVER_CANCELLATION_THRESHOLD,
     };
   }
 

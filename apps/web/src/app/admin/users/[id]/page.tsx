@@ -63,6 +63,8 @@ interface UserDetail {
   } | null;
   passengerTrips: DetailTrip[];
   driverTrips: DetailTrip[];
+  selfCancelledRecently: number;
+  isFlaggedForCancellations: boolean;
   ratingsReceived: {
     id: string;
     stars: number;
@@ -153,6 +155,11 @@ export default function AdminUserDetailPage() {
             <Pill className="bg-neutral-100 text-neutral-700">{ROLE_LABELS[user.role] ?? user.role}</Pill>
             {!user.isActive && <Pill className="bg-red-100 text-red-700">Suspended</Pill>}
             {!user.emailVerifiedAt && <Pill className="bg-amber-100 text-amber-800">Unverified</Pill>}
+            {user.isFlaggedForCancellations && (
+              <Pill className="bg-red-100 text-red-700">
+                Over-cancelling ({user.selfCancelledRecently})
+              </Pill>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -165,6 +172,22 @@ export default function AdminUserDetailPage() {
                 <p>{user.phone ?? "No phone on file"}</p>
                 <p className="text-neutral-600">
                   Joined {new Date(user.createdAt).toLocaleDateString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Cancellations</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 text-sm">
+                <p className={user.isFlaggedForCancellations ? "font-semibold text-red-700" : undefined}>
+                  {user.selfCancelledRecently} self-cancelled request
+                  {user.selfCancelledRecently === 1 ? "" : "s"} in the last 7 days
+                </p>
+                <p className="mt-1 text-xs text-neutral-600">
+                  Only counts requests they cancelled themselves — each one already triggered a
+                  billable Google Maps call when it was requested. 5+ in 7 days is flagged above.
                 </p>
               </CardContent>
             </Card>

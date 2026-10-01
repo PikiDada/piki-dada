@@ -160,6 +160,11 @@ export class DeliveriesService {
         status: dto.status,
         cancellationReason: dto.cancellationReason,
         ...(timestampField ? { [timestampField]: new Date() } : {}),
+        // See TripsService.updateStatus's matching comment -- only a sender cancelling their
+        // own request counts toward the admin over-cancellation flag.
+        ...(dto.status === DeliveryStatus.CANCELLED
+          ? { cancelledByUserId: userId }
+          : {}),
       },
     });
 
