@@ -24,11 +24,21 @@ const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Admin",
 };
 
-type Category = "ALL" | "PASSENGER" | "DRIVER" | "ADMIN" | "SUSPENDED" | "FLAGGED";
+type Category =
+  | "ALL"
+  | "PASSENGER"
+  | "PASSENGER_VERIFIED"
+  | "PASSENGER_UNVERIFIED"
+  | "DRIVER"
+  | "ADMIN"
+  | "SUSPENDED"
+  | "FLAGGED";
 
 const CATEGORIES: { value: Category; label: string }[] = [
   { value: "ALL", label: "All" },
   { value: "PASSENGER", label: "Passengers" },
+  { value: "PASSENGER_VERIFIED", label: "Verified passengers" },
+  { value: "PASSENGER_UNVERIFIED", label: "Unverified passengers" },
   { value: "DRIVER", label: "Riders" },
   { value: "ADMIN", label: "Admins" },
   { value: "SUSPENDED", label: "Suspended" },
@@ -64,6 +74,8 @@ export default function AdminUsersPage() {
     const c: Record<Category, number> = {
       ALL: users.length,
       PASSENGER: 0,
+      PASSENGER_VERIFIED: 0,
+      PASSENGER_UNVERIFIED: 0,
       DRIVER: 0,
       ADMIN: 0,
       SUSPENDED: 0,
@@ -71,6 +83,10 @@ export default function AdminUsersPage() {
     };
     for (const u of users) {
       if (u.role === "PASSENGER" || u.role === "DRIVER" || u.role === "ADMIN") c[u.role] += 1;
+      if (u.role === "PASSENGER") {
+        if (u.emailVerifiedAt) c.PASSENGER_VERIFIED += 1;
+        else c.PASSENGER_UNVERIFIED += 1;
+      }
       if (!u.isActive) c.SUSPENDED += 1;
       if (u.isFlaggedForCancellations) c.FLAGGED += 1;
     }
@@ -81,6 +97,12 @@ export default function AdminUsersPage() {
     if (category === "ALL") return users;
     if (category === "SUSPENDED") return users.filter((u) => !u.isActive);
     if (category === "FLAGGED") return users.filter((u) => u.isFlaggedForCancellations);
+    if (category === "PASSENGER_VERIFIED") {
+      return users.filter((u) => u.role === "PASSENGER" && u.emailVerifiedAt);
+    }
+    if (category === "PASSENGER_UNVERIFIED") {
+      return users.filter((u) => u.role === "PASSENGER" && !u.emailVerifiedAt);
+    }
     return users.filter((u) => u.role === category);
   }, [users, category]);
 
