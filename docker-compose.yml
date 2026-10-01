@@ -46,25 +46,10 @@ services:
       mc anonymous set download local/${MINIO_BUCKET:-driver-documents}
       "
 
-  # Outbound-only mail relay (boky/postfix — https://github.com/bokysan/docker-postfix).
-  # Verify current env var names against that project's README before changing anything here;
-  # confirmed against its docs as of this setup: ALLOWED_SENDER_DOMAINS, DKIM_BACKEND,
-  # DKIM_AUTOGENERATE, DKIM_SELECTOR, POSTFIX_myhostname. Listens on submission port 587 only
-  # (port 25 isn't exposed by this image); trusts the Docker bridge network by default via
-  # POSTFIX_mynetworks, so the api container needs no SMTP auth credentials.
-  postfix:
-    image: boky/postfix:latest
-    restart: unless-stopped
-    hostname: mail.pikidada.com
-    environment:
-      ALLOWED_SENDER_DOMAINS: pikidada.com
-      POSTFIX_myhostname: mail.pikidada.com
-      DKIM_BACKEND: opendkim
-      DKIM_AUTOGENERATE: "true"
-      DKIM_SELECTOR: mail
-    volumes:
-      - postfix_dkim:/etc/opendkim/keys
-
+  # No self-hosted mail container here -- email goes through Amazon SES (see
+  # apps/api/.env.example's SMTP_* section). SES is reached over the public internet
+  # regardless of where this stack runs, so it needs no service in this compose file and no
+  # reconfiguration when this moves between hosts.
   api:
     build:
       context: .
@@ -77,8 +62,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      postfix:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
       interval: 15s
@@ -114,6 +97,5 @@ services:
 volumes:
   postgres_data:
   minio_data:
-  postfix_dkim:
   caddy_data:
   caddy_config:

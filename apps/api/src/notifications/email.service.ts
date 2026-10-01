@@ -23,10 +23,12 @@ export class EmailService {
       this.transporter = nodemailer.createTransport({
         host,
         port: this.config.get<number>('SMTP_PORT') ?? 587,
-        // The self-hosted Postfix container is outbound-only and reached over the private
-        // Docker network, so there's no TLS cert to verify -- secure/STARTTLS aren't relevant
-        // the way they would be for an external relay like Brevo or SendGrid's SMTP endpoint.
+        // SES (and any real external relay) is reached over the public internet, not a
+        // private Docker network -- secure:false + requireTLS makes nodemailer upgrade the
+        // connection via STARTTLS and refuse to send if the server doesn't offer it, rather
+        // than silently falling back to plaintext the way it would without requireTLS.
         secure: false,
+        requireTLS: true,
         auth:
           this.config.get<string>('SMTP_USER') &&
           this.config.get<string>('SMTP_PASSWORD')

@@ -12,44 +12,29 @@ for each decision is in the approved migration plan; this is the condensed check
    in a region close to your users if offered (otherwise any EU region is fine).
 2. **Install Docker**: `curl -fsSL https://get.docker.com | sh` (includes the `docker compose`
    plugin on modern Ubuntu).
-3. **Set rDNS/PTR**: Hetzner Cloud console → your server → Networking → the IPv4 address →
-   set reverse DNS to `mail.pikidada.com`. This must match `POSTFIX_myhostname` in
-   `docker-compose.yml` — mismatched rDNS is one of the most common reasons self-hosted mail
-   gets rejected outright.
-4. **Confirm outbound port 25 isn't blocked**: most providers don't block it, but Hetzner
-   occasionally does for brand-new accounts as an anti-abuse measure — if so, open a support
-   ticket asking them to unblock it for your project before relying on mail delivery.
-5. **Clone the repo onto the server** (e.g. to `/opt/pikidada`), then:
+3. **Clone the repo onto the server** (e.g. to `/opt/pikidada`), then:
    ```sh
    cp .env.example .env                     # fill in POSTGRES_*, MINIO_*, NEXT_PUBLIC_*
    cp apps/api/.env.example apps/api/.env    # fill in every secret/key it lists
    ```
-6. **DNS records to add now** (safe before cutover — doesn't affect the current live site):
-   - SPF: TXT on `pikidada.com` → `v=spf1 mx a:mail.pikidada.com -all`
-   - DMARC: TXT on `_dmarc.pikidada.com` → `v=DMARC1; p=quarantine; rua=mailto:you@pikidada.com`
-   - DKIM: can't be added until the `postfix` container has started once and generated a
-     key — see step 2 under Phase 1.
+4. **Email is Amazon SES, not self-hosted** — do this independently of the server/DNS steps
+   below, since SES doesn't care which host your API runs on: verify `pikidada.com` in the SES
+   console (it gives you exact SPF/DKIM records — confirm they show "verified" there, don't
+   just assume), request production access, create SMTP credentials, fill in `SMTP_*` in
+   `apps/api/.env`. See that file's comments for the full rundown.
 
 ## Phase 1 — Dry run (still no impact on the live site)
 
-1. `docker compose up -d postgres minio postfix` (bring up just the stateful/mail services
-   first).
-2. Read the generated DKIM key and add it to DNS:
-   ```sh
-   docker compose exec postfix cat /etc/opendkim/keys/pikidada.com/mail.txt
-   ```
-   Add its contents as a TXT record on `mail._domainkey.pikidada.com`.
-3. Restore a copy of production data to test against (never point this at the live Supabase
+1. `docker compose up -d postgres minio` (bring up just the stateful services first).
+2. Restore a copy of production data to test against (never point this at the live Supabase
    instance in this phase):
    ```sh
    pg_dump "$SUPABASE_DATABASE_URL" | docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"
    ```
-4. `docker compose up -d --build` (build and start `api`, `web`, `caddy` too).
-5. `docker compose exec api npx prisma migrate deploy` if migrations haven't run yet.
-6. Smoke test for real: register a fresh account, confirm the verification email actually
-   arrives (check spam), run the raw email through [mail-tester.com](https://www.mail-tester.com)
-   and aim for as close to 10/10 as possible before trusting this for real users, log in, take
-   a test trip end-to-end, log into `/admin`.
+3. `docker compose up -d --build` (build and start `api`, `web`, `caddy` too).
+4. `docker compose exec api npx prisma migrate deploy` if migrations haven't run yet.
+5. Smoke test for real: register a fresh account, confirm the verification email actually
+   arrives (check spam), log in, take a test trip end-to-end, log into `/admin`.
 
 ## Phase 2 — Cutover (the maintenance window)
 
