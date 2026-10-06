@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { type Transporter } from 'nodemailer';
+import axios from 'axios';
 
 function escapeHtml(value: string) {
   return value
@@ -16,6 +17,9 @@ export class EmailService {
   private webUrl: string;
   private enabled: boolean;
   private transporter: Transporter | null = null;
+  // The hosted deployment still sends through SendGrid until SES is configured there; SMTP
+  // (SES) wins when both are set. Called over its HTTP API, so no SDK dependency.
+  private sendgridKey: string | null = null;
 
   constructor(private config: ConfigService) {
     const host = this.config.get<string>('SMTP_HOST');
@@ -39,10 +43,13 @@ export class EmailService {
             : undefined,
       });
       this.enabled = true;
+    } else if (this.config.get<string>('SENDGRID_API_KEY')) {
+      this.sendgridKey = this.config.get<string>('SENDGRID_API_KEY')!;
+      this.enabled = true;
     } else {
       this.enabled = false;
       console.warn(
-        '[EmailService] SMTP_HOST not configured — email is disabled',
+        '[EmailService] Neither SMTP_HOST nor SENDGRID_API_KEY configured — email is disabled',
       );
     }
     this.fromAddress =
@@ -51,9 +58,9 @@ export class EmailService {
   }
 
   async send(to: string, subject: string, html: string) {
-    if (!this.enabled || !this.transporter) {
+    if (!this.enabled) {
       console.warn(
-        '[EmailService] Email disabled (no SMTP_HOST). Would have sent:',
+        '[EmailService] Email disabled (no SMTP_HOST or SENDGRID_API_KEY). Would have sent:',
         subject,
         'to',
         to,
@@ -64,12 +71,28 @@ export class EmailService {
       console.log(
         `[EmailService] Sending email to ${to} with subject: ${subject}`,
       );
-      await this.transporter.sendMail({
-        from: this.fromAddress,
-        to,
-        subject,
-        html,
-      });
+      if (this.transporter) {
+        await this.transporter.sendMail({
+          from: this.fromAddress,
+          to,
+          subject,
+          html,
+        });
+      } else {
+        await axios.post(
+          'https://api.sendgrid.com/v3/mail/send',
+          {
+            personalizations: [{ to: [{ email: to }] }],
+            from: { email: this.fromAddress },
+            subject,
+            content: [{ type: 'text/html', value: html }],
+          },
+          {
+            headers: { Authorization: `Bearer ${this.sendgridKey}` },
+            timeout: 10000,
+          },
+        );
+      }
       console.log(`[EmailService] Email sent successfully to ${to}`);
     } catch (err) {
       console.error(
