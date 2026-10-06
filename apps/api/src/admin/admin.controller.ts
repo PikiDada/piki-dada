@@ -21,6 +21,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminService } from './admin.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
+import { UpdatePricingSettingsDto } from './dto/update-pricing-settings.dto';
+import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateDeliveryCategoryDto } from './dto/create-delivery-category.dto';
 import { UpdateDeliveryCategoryDto } from './dto/update-delivery-category.dto';
@@ -40,6 +42,7 @@ export class AdminController {
     private adminService: AdminService,
     private pushService: PushService,
     private auditLog: AuditLogService,
+    private pricingSettings: PricingSettingsService,
   ) {}
 
   @Get('stats')
@@ -299,6 +302,26 @@ export class AdminController {
       admin.id,
       'pricing.upsert',
       { type: 'PricingRule', id: rideType },
+      { ...dto },
+    );
+    return result;
+  }
+
+  @Get('pricing-settings')
+  getPricingSettings() {
+    return this.pricingSettings.get();
+  }
+
+  @Patch('pricing-settings')
+  async updatePricingSettings(
+    @CurrentUser() admin: { id: string },
+    @Body() dto: UpdatePricingSettingsDto,
+  ) {
+    const result = await this.pricingSettings.update(dto);
+    await this.auditLog.log(
+      admin.id,
+      'pricing-settings.update',
+      { type: 'PricingSettings', id: '1' },
       { ...dto },
     );
     return result;

@@ -96,6 +96,8 @@ export class DeliveriesService {
         fare: estimate.fare,
         currency: estimate.currency,
         paymentMethod: dto.paymentMethod,
+        waitingPerMinute: estimate.waitingPerMinute,
+        freeWaitMinutes: estimate.freeWaitMinutes,
         stops: {
           create: stops.map((s, i) => ({
             sequence: i,
@@ -115,11 +117,10 @@ export class DeliveriesService {
       { label: dto.destinationAddress, ...destination },
     ]);
 
-    const nearbyRiders = await this.pricing.findNearbyDrivers(
-      RideType.BODA,
-      pickup,
-      SEARCH_RADIUS_KM,
-    );
+    const [nearbyRiders, { averageSpeedKmh }] = await Promise.all([
+      this.pricing.findNearbyDrivers(RideType.BODA, pickup, SEARCH_RADIUS_KM),
+      this.pricing.settings(),
+    ]);
     for (const rider of nearbyRiders) {
       this.gateway.emitToUser(rider.userId, SOCKET_EVENTS.DELIVERY_REQUESTED, {
         deliveryId: delivery.id,
@@ -129,7 +130,10 @@ export class DeliveriesService {
         fare: delivery.fare,
         stopCount: delivery.stops.length,
         distanceToPickupKm: Number(rider.distanceKm.toFixed(2)),
-        etaToPickupMin: this.pricing.etaMinutesForDistance(rider.distanceKm),
+        etaToPickupMin: this.pricing.etaMinutesForDistance(
+          rider.distanceKm,
+          averageSpeedKmh,
+        ),
       });
     }
 
@@ -223,12 +227,7 @@ export class DeliveriesService {
       const finalFare =
         delivery.status === DeliveryStatus.DELIVERED
           ? (delivery.fare ?? 0)
-          : await this.applyWaitingFee(
-              deliveryId,
-              delivery.sizeTierId,
-              delivery.fare ?? 0,
-              now,
-            );
+          : await this.finalizeFare(delivery, now);
 
       // Payment always starts PENDING, even for CASH — see TripsService.updateStatus's
       // matching comment for why.
@@ -264,29 +263,38 @@ export class DeliveriesService {
     return updated;
   }
 
-  // Same rules as TripsService.applyWaitingFee -- see its comment.
-  private async applyWaitingFee(
-    deliveryId: string,
-    sizeTierId: string | null,
-    quotedFare: number,
+  // Same as TripsService.finalizeFare, minus the skipped-stops step: a delivery can't reach
+  // its final drop-off with any drop-off left (see updateStatus), so none are ever skipped.
+  private async finalizeFare(
+    delivery: Prisma.DeliveryGetPayload<object>,
     deliveredAt: Date,
   ): Promise<number> {
     await this.prisma.deliveryStop.updateMany({
-      where: { deliveryId, arrivedAt: { not: null }, departedAt: null },
+      where: {
+        deliveryId: delivery.id,
+        arrivedAt: { not: null },
+        departedAt: null,
+      },
       data: { departedAt: deliveredAt },
     });
     const stops = await this.prisma.deliveryStop.findMany({
-      where: { deliveryId },
+      where: { deliveryId: delivery.id },
     });
-    const waitingFee = await this.pricing.deliveryWaitingFee(sizeTierId, stops);
+    const waitingFee = await this.pricing.waitingFee(delivery, stops);
+    const quotedFare = delivery.fare ?? 0;
     if (waitingFee === 0) return quotedFare;
 
     const finalFare = quotedFare + waitingFee;
     await this.prisma.delivery.update({
-      where: { id: deliveryId },
+      where: { id: delivery.id },
       data: { waitingFee, fare: finalFare },
     });
     return finalFare;
+  }
+
+  // What the booking page shows for the chosen size tier, before the delivery exists.
+  waitingPolicy(sizeTierId: string) {
+    return this.pricing.deliveryWaitingPolicy(sizeTierId);
   }
 
   async previewStops(

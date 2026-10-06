@@ -11,8 +11,19 @@ interface PricingRule {
   baseFare: number;
   perKm: number;
   perMinute: number;
+  waitingPerMinute: number;
+  freeWaitMinutes: number;
   currency: string;
 }
+
+const EMPTY_RULE: PricingRule = {
+  baseFare: 0,
+  perKm: 0,
+  perMinute: 0,
+  waitingPerMinute: 0,
+  freeWaitMinutes: 3,
+  currency: "UGX",
+};
 
 interface DeliverySizeTier {
   id: string;
@@ -78,10 +89,7 @@ export default function AdminDeliverySizeTiersPage() {
           ? {
               ...t,
               pricingRule: {
-                baseFare: 0,
-                perKm: 0,
-                perMinute: 0,
-                currency: "UGX",
+                ...EMPTY_RULE,
                 ...t.pricingRule,
                 ...patch,
               },
@@ -128,7 +136,7 @@ export default function AdminDeliverySizeTiersPage() {
   }
 
   async function savePricing(tier: DeliverySizeTier) {
-    const rule = tier.pricingRule ?? { baseFare: 0, perKm: 0, perMinute: 0, currency: "UGX" };
+    const rule = { ...EMPTY_RULE, ...tier.pricingRule };
     setSavingId(tier.id);
     try {
       await apiFetch(`/admin/delivery-size-tiers/${tier.id}/pricing`, {
@@ -265,6 +273,31 @@ export default function AdminDeliverySizeTiersPage() {
                         type="number"
                         value={t.pricingRule?.perMinute ?? 0}
                         onChange={(e) => updatePricing(t.id, { perMinute: Number(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label>Free waiting min / drop-off</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={t.pricingRule?.freeWaitMinutes ?? EMPTY_RULE.freeWaitMinutes}
+                        onChange={(e) =>
+                          updatePricing(t.id, { freeWaitMinutes: Number(e.target.value) })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Then per minute</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={t.pricingRule?.waitingPerMinute ?? 0}
+                        onChange={(e) =>
+                          updatePricing(t.id, { waitingPerMinute: Number(e.target.value) })
+                        }
                       />
                     </div>
                   </div>

@@ -24,9 +24,16 @@ export interface Vehicle {
   photoUrl?: string | null;
 }
 
-// Mirrors the API's limits -- see MAX_STOPS / FREE_WAIT_MINUTES_PER_STOP in pricing.service.ts.
+// Mirrors the API's limit -- see MAX_STOPS in pricing.service.ts.
 export const MAX_STOPS = 3;
-export const FREE_WAIT_MINUTES_PER_STOP = 3;
+
+// Admin-set waiting rates (/admin/pricing). A trip or delivery carries the ones it was booked
+// under; the booking page fetches the current ones.
+export interface WaitingPolicy {
+  waitingPerMinute: number;
+  freeWaitMinutes: number;
+  currency?: string;
+}
 
 export interface TripStop {
   id: string;
@@ -49,6 +56,8 @@ export interface Trip {
   rideType: RideType;
   fare: number;
   waitingFee?: number;
+  waitingPerMinute?: number;
+  freeWaitMinutes?: number;
   stops?: TripStop[];
   currency: string;
   pickupAddress: string;
@@ -172,6 +181,8 @@ export interface Delivery {
   cashOnDeliveryAmount?: number | null;
   fare: number;
   waitingFee?: number;
+  waitingPerMinute?: number;
+  freeWaitMinutes?: number;
   stops?: DeliveryStop[];
   currency: string;
   paymentMethod: PaymentMethod;

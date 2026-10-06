@@ -10,12 +10,21 @@ const BODA_RULE = {
   baseFare: 1500,
   perKm: 500,
   perMinute: 50,
+  waitingPerMinute: 200,
+  freeWaitMinutes: 5,
   currency: 'UGX',
+};
+
+const DEFAULT_SETTINGS = {
+  fareRoundingUnit: 500,
+  roadDistanceFallbackFactor: 1.3,
+  averageSpeedKmh: 28,
 };
 
 function makeService(
   env: Record<string, string> = {},
   mapsRoute?: { distanceKm: number; durationMin: number },
+  settings: Partial<typeof DEFAULT_SETTINGS> = {},
 ) {
   const prisma = {
     pricingRule: {
@@ -28,10 +37,14 @@ function makeService(
     enabled: !!mapsRoute,
     route: jest.fn().mockResolvedValue(mapsRoute ?? null),
   };
+  const pricingSettings = {
+    get: jest.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, ...settings }),
+  };
   const service = new PricingService(
     prisma as never,
     config as never,
     maps as never,
+    pricingSettings as never,
   );
   return { service, maps };
 }
@@ -99,29 +112,67 @@ describe('PricingService with stops', () => {
     expect(viaStop.distanceKm).toBeGreaterThan(direct.distanceKm);
   });
 
-  describe('tripWaitingFee', () => {
-    const at = (minute: number) => new Date(Date.UTC(2026, 9, 5, 9, minute));
+  it("uses the admin's fallback factor and rounding unit", async () => {
+    const { service } = makeService({}, undefined, {
+      roadDistanceFallbackFactor: 2,
+      fareRoundingUnit: 1000,
+    });
+    const estimate = await service.estimateFare(
+      RideType.BODA,
+      pickup,
+      destination,
+    );
 
-    it('charges per minute beyond the 3 free minutes, rounded to 500 UGX', async () => {
+    const straight = service.haversineDistanceKm(pickup, destination);
+    expect(estimate.distanceKm).toBeCloseTo(straight * 2, 1);
+    expect(estimate.fare % 1000).toBe(0);
+  });
+
+  it("returns the ride type's waiting rates so the trip can lock them in", async () => {
+    const { service } = makeService();
+    const estimate = await service.estimateFare(
+      RideType.BODA,
+      pickup,
+      destination,
+    );
+    expect(estimate.waitingPerMinute).toBe(200);
+    expect(estimate.freeWaitMinutes).toBe(5);
+  });
+
+  describe('waitingFee', () => {
+    const at = (minute: number) => new Date(Date.UTC(2026, 9, 5, 9, minute));
+    const booked = { waitingPerMinute: 100, freeWaitMinutes: 3 };
+
+    it('charges per minute beyond the free minutes, rounded to the admin unit', async () => {
       const { service } = makeService();
-      // 13 minutes waited -> 10 billable x 50 UGX = 500
-      const fee = await service.tripWaitingFee(RideType.BODA, [
+      // 13 minutes waited -> 10 billable x 100 UGX = 1,000
+      const fee = await service.waitingFee(booked, [
         { arrivedAt: at(0), departedAt: at(13) },
       ]);
-      expect(fee).toBe(500);
+      expect(fee).toBe(1000);
     });
 
-    it('is free within the allowance', async () => {
+    it('uses the free minutes the trip was booked with', async () => {
       const { service } = makeService();
-      const fee = await service.tripWaitingFee(RideType.BODA, [
-        { arrivedAt: at(0), departedAt: at(3) },
-      ]);
+      const fee = await service.waitingFee(
+        { waitingPerMinute: 100, freeWaitMinutes: 15 },
+        [{ arrivedAt: at(0), departedAt: at(13) }],
+      );
+      expect(fee).toBe(0);
+    });
+
+    it('is free when the rate is zero', async () => {
+      const { service } = makeService();
+      const fee = await service.waitingFee(
+        { waitingPerMinute: 0, freeWaitMinutes: 0 },
+        [{ arrivedAt: at(0), departedAt: at(30) }],
+      );
       expect(fee).toBe(0);
     });
 
     it('does not charge a stop the driver never left', async () => {
       const { service } = makeService();
-      const fee = await service.tripWaitingFee(RideType.BODA, [
+      const fee = await service.waitingFee(booked, [
         { arrivedAt: at(0), departedAt: null },
       ]);
       expect(fee).toBe(0);

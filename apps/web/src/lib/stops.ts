@@ -1,4 +1,13 @@
-import type { LatLng, TripStop } from "./types";
+import type { LatLng, TripStop, WaitingPolicy } from "./types";
+
+// "Waiting at each stop is free for 3 minutes, then 200 UGX per minute."
+export function waitingPolicyText(policy: WaitingPolicy, noun = "stop") {
+  if (policy.waitingPerMinute <= 0) return `Waiting at each ${noun} is free.`;
+  const rate = `${policy.waitingPerMinute.toLocaleString()} ${policy.currency ?? "UGX"} per minute`;
+  return policy.freeWaitMinutes > 0
+    ? `Waiting at each ${noun} is free for ${policy.freeWaitMinutes} minutes, then ${rate}.`
+    : `Waiting at each ${noun} costs ${rate}.`;
+}
 
 export interface StopDraft {
   // Stable React key, so removing a middle stop doesn't hand its input state to the next one.

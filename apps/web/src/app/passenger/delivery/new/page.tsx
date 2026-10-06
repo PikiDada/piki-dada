@@ -13,14 +13,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  FREE_WAIT_MINUTES_PER_STOP,
   MAX_STOPS,
   type LatLng,
   type Delivery,
   type DeliveryCategory,
   type DeliverySizeTier,
+  type WaitingPolicy,
 } from "@/lib/types";
-import { stopsPayload, stopsReady, type StopDraft } from "@/lib/stops";
+import { stopsPayload, stopsReady, waitingPolicyText, type StopDraft } from "@/lib/stops";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
 import { StopListEditor } from "@/components/trip/stop-list-editor";
 
@@ -42,6 +42,7 @@ export default function NewDeliveryPage() {
   const [dropoffContactName, setDropoffContactName] = useState("");
   const [dropoffContactPhone, setDropoffContactPhone] = useState("");
   const [stops, setStops] = useState<StopDraft[]>([]);
+  const [waitingPolicy, setWaitingPolicy] = useState<WaitingPolicy | null>(null);
 
   const [itemDescription, setItemDescription] = useState("");
   const [itemPhotoUrl, setItemPhotoUrl] = useState<string | null>(null);
@@ -63,6 +64,13 @@ export default function NewDeliveryPage() {
       setSizeTierId((current) => current ?? list[0]?.id ?? null);
     });
   }, []);
+
+  useEffect(() => {
+    if (!sizeTierId) return;
+    apiFetch<WaitingPolicy>(`/deliveries/waiting-policy?sizeTierId=${encodeURIComponent(sizeTierId)}`)
+      .then(setWaitingPolicy)
+      .catch(() => setWaitingPolicy(null));
+  }, [sizeTierId]);
 
   const canRequest =
     categoryId &&
@@ -290,8 +298,8 @@ export default function NewDeliveryPage() {
             />
             {stops.length > 0 && (
               <p className="text-xs text-neutral-500">
-                The rider visits these in order before the final drop-off. Waiting at each is
-                free for {FREE_WAIT_MINUTES_PER_STOP} minutes, then charged per minute.
+                The rider visits these in order before the final drop-off.
+                {waitingPolicy && ` ${waitingPolicyText(waitingPolicy, "drop-off")}`}
               </p>
             )}
           </div>

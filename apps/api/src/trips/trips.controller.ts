@@ -3,12 +3,14 @@ import {
   Controller,
   Get,
   Param,
+  ParseEnumPipe,
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { RideType, UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -100,6 +102,14 @@ export class TripsController {
     @Body() dto: RateTripDto,
   ) {
     return this.tripsService.rateTrip(user.id, id, dto);
+  }
+
+  // Must come before ':id' below, or 'waiting-policy' would be parsed as an id.
+  @Get('waiting-policy')
+  waitingPolicy(
+    @Query('rideType', new ParseEnumPipe(RideType)) rideType: RideType,
+  ) {
+    return this.tripsService.waitingPolicy(rideType);
   }
 
   @Get('me')

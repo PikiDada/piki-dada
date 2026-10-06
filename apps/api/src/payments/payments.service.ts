@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PaymentMethod, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PLATFORM_COMMISSION_RATE } from '../trips/trips.service';
+import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
 import { StripeService } from './stripe.service';
 import { FlutterwaveService } from './flutterwave.service';
 
@@ -17,6 +17,7 @@ export class PaymentsService {
     private stripeService: StripeService,
     private flutterwaveService: FlutterwaveService,
     private config: ConfigService,
+    private pricingSettings: PricingSettingsService,
   ) {}
 
   private async getPayableTrip(tripId: string, passengerId: string) {
@@ -127,7 +128,9 @@ export class PaymentsService {
     paymentMethod: PaymentMethod,
     referenceLabel: string,
   ) {
-    const commission = Math.round(fare * PLATFORM_COMMISSION_RATE);
+    // The rate in force when the payment is confirmed (admin-set in /admin/pricing).
+    const { platformCommissionRate } = await this.pricingSettings.get();
+    const commission = Math.round(fare * platformCommissionRate);
 
     if (paymentMethod === PaymentMethod.CASH) {
       // Cash trips/deliveries: the rider already collected the full fare directly from the

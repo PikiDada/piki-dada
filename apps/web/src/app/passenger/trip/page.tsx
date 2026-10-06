@@ -118,6 +118,7 @@ function PassengerTripView({ id }: { id: string }) {
             pickupAddress={trip.pickupAddress}
             destinationAddress={trip.destinationAddress}
             stops={trip.stops}
+            finished={trip.status === "COMPLETED"}
           />
           <p className="text-2xl font-bold">
             {trip.fare?.toLocaleString()} {trip.currency}

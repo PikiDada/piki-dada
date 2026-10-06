@@ -19,7 +19,7 @@ import { CreateDeliverySizeTierDto } from './dto/create-delivery-size-tier.dto';
 import { UpdateDeliverySizeTierDto } from './dto/update-delivery-size-tier.dto';
 import { UpdateDeliverySurchargeDto } from './dto/update-delivery-surcharge.dto';
 import { decryptUserPhone } from '../common/field-encryption';
-import { PLATFORM_COMMISSION_RATE } from '../trips/trips.service';
+import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
 
 // A passenger/sender cancelling their own request is what racks up billable Google Routes API
 // calls (charged at request time) for nothing -- a driver/rider backing out after accepting
@@ -30,7 +30,10 @@ export const OVER_CANCELLATION_THRESHOLD = 5;
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private pricingSettings: PricingSettingsService,
+  ) {}
 
   async getStats() {
     const [
@@ -73,7 +76,10 @@ export class AdminService {
     };
   }
 
+  // Commission and payout figures are estimates at the CURRENT commission rate; the exact
+  // amounts charged per trip are in each rider's wallet ledger.
   async getFinanceSummary() {
+    const { platformCommissionRate } = await this.pricingSettings.get();
     const now = new Date();
     const startOfToday = new Date(
       now.getFullYear(),
@@ -147,15 +153,15 @@ export class AdminService {
 
     const grossRevenue = allTimePaid._sum.amount ?? 0;
     const platformCommission = Math.round(
-      grossRevenue * PLATFORM_COMMISSION_RATE,
+      grossRevenue * platformCommissionRate,
     );
     const nonCashRevenue = nonCashPaid._sum.amount ?? 0;
     const riderPayouts = Math.round(
-      nonCashRevenue * (1 - PLATFORM_COMMISSION_RATE),
+      nonCashRevenue * (1 - platformCommissionRate),
     );
     const deliveryGrossRevenue = deliveryPaid._sum.amount ?? 0;
     const deliveryCommission = Math.round(
-      deliveryGrossRevenue * PLATFORM_COMMISSION_RATE,
+      deliveryGrossRevenue * platformCommissionRate,
     );
 
     return {
@@ -182,6 +188,7 @@ export class AdminService {
   }
 
   async getFinanceForRange(from: Date, to: Date) {
+    const { platformCommissionRate } = await this.pricingSettings.get();
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       throw new BadRequestException('Invalid date range');
     }
@@ -218,10 +225,10 @@ export class AdminService {
 
     const grossRevenue = totals._sum.amount ?? 0;
     const platformCommission = Math.round(
-      grossRevenue * PLATFORM_COMMISSION_RATE,
+      grossRevenue * platformCommissionRate,
     );
     const riderPayouts = Math.round(
-      (nonCash._sum.amount ?? 0) * (1 - PLATFORM_COMMISSION_RATE),
+      (nonCash._sum.amount ?? 0) * (1 - platformCommissionRate),
     );
 
     return {
@@ -520,11 +527,14 @@ export class AdminService {
 
   // Superseded by delivery size tiers below -- kept callable (unused by the admin UI now) so
   // no functionality is destroyed, just no longer surfaced.
+  // Legacy per-category rule (size tiers price deliveries now); it has no waiting fields.
   upsertDeliveryPricingRule(categoryId: string, dto: UpsertPricingRuleDto) {
+    const { baseFare, perKm, perMinute, currency } = dto;
+    const data = { baseFare, perKm, perMinute, currency };
     return this.prisma.deliveryPricingRule.upsert({
       where: { categoryId },
-      update: dto,
-      create: { categoryId, ...dto },
+      update: data,
+      create: { categoryId, ...data },
     });
   }
 

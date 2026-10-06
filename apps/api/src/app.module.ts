@@ -16,6 +16,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
 import { MapsPlatformModule } from './maps-platform/maps-platform.module';
+import { PricingSettingsModule } from './pricing-settings/pricing-settings.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MapsPlatformModule } from './maps-platform/maps-platform.module';
     ]),
     PrismaModule,
     MapsPlatformModule,
+    PricingSettingsModule,
     AuthModule,
     UsersModule,
     DriversModule,

@@ -10,9 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { stopLocations, stopProgress } from "@/lib/stops";
+import { stopLocations, stopProgress, waitingPolicyText } from "@/lib/stops";
 import {
-  FREE_WAIT_MINUTES_PER_STOP,
   SOCKET_EVENTS,
   type Trip,
   type TripStatus,
@@ -133,6 +132,7 @@ function DriverTripView({ id }: { id: string }) {
             pickupAddress={trip.pickupAddress}
             destinationAddress={trip.destinationAddress}
             stops={trip.stops}
+            finished={trip.status === "COMPLETED"}
           />
           <p className="text-2xl font-bold">
             {trip.fare?.toLocaleString()} {trip.currency}
@@ -165,8 +165,12 @@ function DriverTripView({ id }: { id: string }) {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
-                . The first {FREE_WAIT_MINUTES_PER_STOP} minutes are free; after that the
-                passenger pays per minute.
+                . {waitingPolicyText({
+                  waitingPerMinute: trip.waitingPerMinute ?? 0,
+                  freeWaitMinutes: trip.freeWaitMinutes ?? 0,
+                  currency: trip.currency,
+                })}{" "}
+                The passenger pays for the wait.
               </p>
               <Button
                 className="w-full"

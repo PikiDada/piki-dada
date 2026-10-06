@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Banknote, Crosshair, Package, User } from "lucide-react";
@@ -10,13 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import {
-  FREE_WAIT_MINUTES_PER_STOP,
   MAX_STOPS,
   type LatLng,
   type RideType,
   type Trip,
+  type WaitingPolicy,
 } from "@/lib/types";
-import { stopsPayload, stopsReady, type StopDraft } from "@/lib/stops";
+import { stopsPayload, stopsReady, waitingPolicyText, type StopDraft } from "@/lib/stops";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
 import { StopListEditor } from "@/components/trip/stop-list-editor";
 
@@ -28,6 +28,13 @@ export default function PassengerBookingPage() {
   const [destination, setDestination] = useState<LatLng | undefined>();
   const [stops, setStops] = useState<StopDraft[]>([]);
   const rideType: RideType = "BODA";
+  const [waitingPolicy, setWaitingPolicy] = useState<WaitingPolicy | null>(null);
+
+  useEffect(() => {
+    apiFetch<WaitingPolicy>(`/trips/waiting-policy?rideType=${rideType}`)
+      .then(setWaitingPolicy)
+      .catch(() => setWaitingPolicy(null));
+  }, [rideType]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -142,11 +149,8 @@ export default function PassengerBookingPage() {
             {locating ? "Getting your location..." : "Use my current location"}
           </button>
           <StopListEditor stops={stops} onChange={setStops} max={MAX_STOPS} />
-          {stops.length > 0 && (
-            <p className="text-xs text-neutral-500">
-              Waiting at each stop is free for {FREE_WAIT_MINUTES_PER_STOP} minutes, then charged
-              per minute.
-            </p>
+          {stops.length > 0 && waitingPolicy && (
+            <p className="text-xs text-neutral-500">{waitingPolicyText(waitingPolicy)}</p>
           )}
           <PlaceInput
             placeholder="Destination"

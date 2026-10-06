@@ -10,9 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { stopLocations, stopProgress } from "@/lib/stops";
+import { stopLocations, stopProgress, waitingPolicyText } from "@/lib/stops";
 import {
-  FREE_WAIT_MINUTES_PER_STOP,
   SOCKET_EVENTS,
   type Delivery,
   type DeliveryStatus,
@@ -208,8 +207,15 @@ function DriverDeliveryView({ id }: { id: string }) {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
-                . The first {FREE_WAIT_MINUTES_PER_STOP} minutes are free; after that the sender
-                pays per minute.
+                . {waitingPolicyText(
+                  {
+                    waitingPerMinute: delivery.waitingPerMinute ?? 0,
+                    freeWaitMinutes: delivery.freeWaitMinutes ?? 0,
+                    currency: delivery.currency,
+                  },
+                  "drop-off",
+                )}{" "}
+                The sender pays for the wait.
               </p>
               <Button
                 className="w-full"

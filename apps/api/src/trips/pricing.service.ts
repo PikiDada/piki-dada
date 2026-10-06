@@ -4,47 +4,48 @@ import axios from 'axios';
 import { RideType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
+import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
+
+// Every rate, rounding unit and fallback factor here comes from the admin's pricing settings
+// (/admin/pricing): PricingRule and DeliverySizeTierPricingRule per ride type / delivery tier,
+// PricingSettings for the rest. Nothing pricing-related is hard-coded.
 
 const EARTH_RADIUS_KM = 6371;
-const AVERAGE_SPEED_KMH = 28;
-// When the Routes API is unavailable, scale the straight-line distance up to
-// approximate real road distance rather than pricing the trip as if roads
-// were straight lines. 1.3x is a reasonable general correction for Kampala's
-// road network -- not exact for any given trip, but far closer than 1x.
-const ROAD_DISTANCE_FALLBACK_FACTOR = 1.3;
 const ROUTES_API_TIMEOUT_MS = 4000;
-// Cash is how most trips/deliveries get paid, and nobody wants to carry exact change for a
-// fare like 7,432 UGX -- round every fare (rides and deliveries) to the nearest note
-// denomination instead.
-const FARE_ROUNDING_UNIT = 500;
 
 export interface LatLng {
   lat: number;
   lng: number;
 }
 
+// Cash is how most fares get paid, so every fare rounds to a unit payable in notes.
 function roundToNearest(amount: number, unit: number): number {
-  return Math.round(amount / unit) * unit;
+  return unit > 0 ? Math.round(amount / unit) * unit : Math.round(amount);
 }
 
 export const MAX_STOPS = 3;
-export const FREE_WAIT_MINUTES_PER_STOP = 3;
 
 export interface StopVisit {
   arrivedAt: Date | null;
   departedAt: Date | null;
 }
 
+// The waiting rates a trip or delivery was booked under (copied onto it at booking).
+export interface WaitingPolicy {
+  waitingPerMinute: number;
+  freeWaitMinutes: number;
+}
+
 // Whole minutes past the free allowance, per stop. A stop the driver never marked as departed
 // is not charged: the alternative (billing until trip completion) can produce a large charge
 // from a forgotten tap.
-function billableWaitMinutes(stops: StopVisit[]): number {
+function billableWaitMinutes(stops: StopVisit[], freeMinutes: number): number {
   let total = 0;
   for (const stop of stops) {
     if (!stop.arrivedAt || !stop.departedAt) continue;
     const waited =
       (stop.departedAt.getTime() - stop.arrivedAt.getTime()) / 60000;
-    total += Math.max(0, Math.floor(waited - FREE_WAIT_MINUTES_PER_STOP));
+    total += Math.max(0, Math.floor(waited - freeMinutes));
   }
   return total;
 }
@@ -62,7 +63,12 @@ export class PricingService {
     private prisma: PrismaService,
     private config: ConfigService,
     private maps: MapsPlatformService,
+    private pricingSettings: PricingSettingsService,
   ) {}
+
+  settings() {
+    return this.pricingSettings.get();
+  }
 
   haversineDistanceKm(a: LatLng, b: LatLng): number {
     const dLat = this.toRad(b.lat - a.lat);
@@ -79,8 +85,24 @@ export class PricingService {
     return (deg * Math.PI) / 180;
   }
 
-  etaMinutesForDistance(distanceKm: number): number {
-    return Math.round((distanceKm / AVERAGE_SPEED_KMH) * 60);
+  // averageSpeedKmh comes from settings(); callers fetch it once for a whole batch of riders.
+  etaMinutesForDistance(distanceKm: number, averageSpeedKmh: number): number {
+    return Math.round((distanceKm / averageSpeedKmh) * 60);
+  }
+
+  // Road distance and duration for the route, or the admin-tuned straight-line estimate when
+  // no routing service answers.
+  private async routeOrEstimate(points: LatLng[]) {
+    const [road, settings] = await Promise.all([
+      this.computeRoadRoute(points),
+      this.pricingSettings.get(),
+    ]);
+    const distanceKm =
+      road?.distanceKm ??
+      this.straightLineKm(points) * settings.roadDistanceFallbackFactor;
+    const durationMin =
+      road?.durationMin ?? (distanceKm / settings.averageSpeedKmh) * 60;
+    return { distanceKm, durationMin, settings };
   }
 
   // Sum of straight lines between consecutive points, so stops count toward the estimate too.
@@ -209,30 +231,25 @@ export class PricingService {
           baseFare: 1500,
           perKm: 500,
           perMinute: 50,
+          waitingPerMinute: 50,
           currency: 'UGX',
         },
       }))
     );
   }
 
+  // The fare plus the waiting rates in force now, which the caller copies onto the trip so
+  // they stay fixed for it.
   async estimateFare(
     rideType: RideType,
     pickup: LatLng,
     destination: LatLng,
     stops: LatLng[] = [],
   ) {
-    const points = [pickup, ...stops, destination];
-    const straightLineKm = this.straightLineKm(points);
-
-    const [road, rule] = await Promise.all([
-      this.computeRoadRoute(points),
+    const [{ distanceKm, durationMin, settings }, rule] = await Promise.all([
+      this.routeOrEstimate([pickup, ...stops, destination]),
       this.rideRule(rideType),
     ]);
-
-    const distanceKm =
-      road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
-    const durationMin =
-      road?.durationMin ?? (distanceKm / AVERAGE_SPEED_KMH) * 60;
 
     const fare =
       rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
@@ -241,19 +258,59 @@ export class PricingService {
       rideType,
       distanceKm: Number(distanceKm.toFixed(2)),
       durationMin: Number(durationMin.toFixed(1)),
-      fare: roundToNearest(fare, FARE_ROUNDING_UNIT),
+      fare: roundToNearest(fare, settings.fareRoundingUnit),
+      currency: rule.currency,
+      waitingPerMinute: rule.waitingPerMinute,
+      freeWaitMinutes: rule.freeWaitMinutes,
+    };
+  }
+
+  // What the booking page shows before a trip exists.
+  async rideWaitingPolicy(rideType: RideType) {
+    const rule = await this.rideRule(rideType);
+    return {
+      waitingPerMinute: rule.waitingPerMinute,
+      freeWaitMinutes: rule.freeWaitMinutes,
       currency: rule.currency,
     };
   }
 
+  async deliveryWaitingPolicy(sizeTierId: string) {
+    const rule = await this.deliveryRule(sizeTierId);
+    return {
+      waitingPerMinute: rule.waitingPerMinute,
+      freeWaitMinutes: rule.freeWaitMinutes,
+      currency: rule.currency,
+    };
+  }
+
+  // Only used the first time a ride type is priced; admins change them in /admin/pricing.
   private defaultRuleFor(rideType: RideType) {
     switch (rideType) {
       case RideType.BODA:
-        return { baseFare: 1500, perKm: 500, perMinute: 50, currency: 'UGX' };
+        return {
+          baseFare: 1500,
+          perKm: 500,
+          perMinute: 50,
+          waitingPerMinute: 50,
+          currency: 'UGX',
+        };
       case RideType.COMFORT:
-        return { baseFare: 4000, perKm: 1200, perMinute: 150, currency: 'UGX' };
+        return {
+          baseFare: 4000,
+          perKm: 1200,
+          perMinute: 150,
+          waitingPerMinute: 150,
+          currency: 'UGX',
+        };
       default:
-        return { baseFare: 3000, perKm: 900, perMinute: 100, currency: 'UGX' };
+        return {
+          baseFare: 3000,
+          perKm: 900,
+          perMinute: 100,
+          waitingPerMinute: 100,
+          currency: 'UGX',
+        };
     }
   }
 
@@ -269,19 +326,14 @@ export class PricingService {
     destination: LatLng,
     stops: LatLng[] = [],
   ) {
-    const points = [pickup, ...stops, destination];
-    const straightLineKm = this.straightLineKm(points);
-
-    const [road, rule, surchargeRules] = await Promise.all([
-      this.computeRoadRoute(points),
-      this.deliveryRule(sizeTierId),
-      this.prisma.deliverySurchargeRule.findMany({ where: { isActive: true } }),
-    ]);
-
-    const distanceKm =
-      road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
-    const durationMin =
-      road?.durationMin ?? (distanceKm / AVERAGE_SPEED_KMH) * 60;
+    const [{ distanceKm, durationMin, settings }, rule, surchargeRules] =
+      await Promise.all([
+        this.routeOrEstimate([pickup, ...stops, destination]),
+        this.deliveryRule(sizeTierId),
+        this.prisma.deliverySurchargeRule.findMany({
+          where: { isActive: true },
+        }),
+      ]);
 
     const baseFare =
       rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
@@ -298,23 +350,22 @@ export class PricingService {
       sizeTierId,
       distanceKm: Number(distanceKm.toFixed(2)),
       durationMin: Number(durationMin.toFixed(1)),
-      fare: roundToNearest(baseFare + surchargeTotal, FARE_ROUNDING_UNIT),
+      fare: roundToNearest(
+        baseFare + surchargeTotal,
+        settings.fareRoundingUnit,
+      ),
       currency: rule.currency,
+      waitingPerMinute: rule.waitingPerMinute,
+      freeWaitMinutes: rule.freeWaitMinutes,
     };
   }
 
-  async tripWaitingFee(rideType: RideType, stops: StopVisit[]) {
-    const minutes = billableWaitMinutes(stops);
-    if (minutes === 0) return 0;
-    const rule = await this.rideRule(rideType);
-    return roundToNearest(minutes * rule.perMinute, FARE_ROUNDING_UNIT);
-  }
-
-  async deliveryWaitingFee(sizeTierId: string | null, stops: StopVisit[]) {
-    const minutes = billableWaitMinutes(stops);
-    if (minutes === 0 || !sizeTierId) return 0;
-    const rule = await this.deliveryRule(sizeTierId);
-    return roundToNearest(minutes * rule.perMinute, FARE_ROUNDING_UNIT);
+  // Charged on the rates the trip/delivery was booked under, not today's.
+  async waitingFee(policy: WaitingPolicy, stops: StopVisit[]) {
+    const minutes = billableWaitMinutes(stops, policy.freeWaitMinutes);
+    if (minutes === 0 || policy.waitingPerMinute <= 0) return 0;
+    const { fareRoundingUnit } = await this.pricingSettings.get();
+    return roundToNearest(minutes * policy.waitingPerMinute, fareRoundingUnit);
   }
 
   // Shared by TripsService and DeliveriesService — pure geo-matching, no money involved, so

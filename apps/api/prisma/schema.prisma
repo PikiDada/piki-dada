@@ -231,6 +231,10 @@ model Trip {
   // into `fare` once the trip completes -- kept separately so the passenger can see why the
   // final fare is higher than the quote. Payments read `fare`, never this.
   waitingFee         Float         @default(0)
+  // The waiting rates in force when the trip was booked, so an admin changing them mid-trip
+  // doesn't change what this passenger agreed to.
+  waitingPerMinute   Float         @default(0)
+  freeWaitMinutes    Int           @default(3)
   fare               Float?
   currency           String        @default("UGX")
   couponCode         String?
@@ -339,8 +343,10 @@ model Delivery {
   cashOnDeliveryAmount Float?
   distanceKm           Float?
   durationMin          Float?
-  // Same as Trip.waitingFee -- see its comment.
+  // Same as Trip.waitingFee / waitingPerMinute / freeWaitMinutes -- see their comments.
   waitingFee           Float             @default(0)
+  waitingPerMinute     Float             @default(0)
+  freeWaitMinutes      Int               @default(3)
   fare                 Float?
   currency             String            @default("UGX")
   paymentMethod        PaymentMethod
@@ -450,13 +456,40 @@ model Coupon {
 }
 
 model PricingRule {
-  id        String   @id @default(cuid())
-  rideType  RideType @unique
-  baseFare  Float
-  perKm     Float
-  perMinute Float
-  currency  String   @default("UGX")
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  rideType         RideType @unique
+  baseFare         Float
+  perKm            Float
+  perMinute        Float
+  // Waiting at stops: free for freeWaitMinutes per stop, then waitingPerMinute. Separate from
+  // perMinute (driving time) so admins can price a driver's idle wait on its own terms.
+  waitingPerMinute Float    @default(0)
+  freeWaitMinutes  Int      @default(3)
+  currency         String   @default("UGX")
+  updatedAt        DateTime @updatedAt
+}
+
+enum UnvisitedStopsPolicy {
+  // Re-price without the stops never reached (never above the quote).
+  REMOVE_FROM_FARE
+  // Keep the quoted fare.
+  CHARGE_QUOTED
+}
+
+// App-wide pricing settings, one row (id 1), edited from /admin/pricing. Per-ride-type and
+// per-delivery-tier rates live on PricingRule / DeliverySizeTierPricingRule instead.
+model PricingSettings {
+  id                         Int                  @id @default(1)
+  // Every fare is rounded to this many UGX, so cash fares are payable in notes.
+  fareRoundingUnit           Int                  @default(500)
+  // Share of each paid fare the platform keeps; the rider earns the rest.
+  platformCommissionRate     Float                @default(0.15)
+  unvisitedStopsPolicy       UnvisitedStopsPolicy @default(REMOVE_FROM_FARE)
+  // Used only when no routing service answers: road distance = straight line x this factor,
+  // and duration (and rider ETAs) from this average speed.
+  roadDistanceFallbackFactor Float                @default(1.3)
+  averageSpeedKmh            Float                @default(28)
+  updatedAt                  DateTime             @updatedAt
 }
 
 // Categories are admin-managed data, not a fixed enum, so new ones (e.g. "Medicine",
@@ -509,14 +542,17 @@ model DeliverySizeTier {
 }
 
 model DeliverySizeTierPricingRule {
-  id         String           @id @default(cuid())
-  sizeTierId String           @unique
-  sizeTier   DeliverySizeTier @relation(fields: [sizeTierId], references: [id], onDelete: Cascade)
-  baseFare   Float
-  perKm      Float
-  perMinute  Float
-  currency   String           @default("UGX")
-  updatedAt  DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  sizeTierId       String           @unique
+  sizeTier         DeliverySizeTier @relation(fields: [sizeTierId], references: [id], onDelete: Cascade)
+  baseFare         Float
+  perKm            Float
+  perMinute        Float
+  // Same as PricingRule's waiting fields.
+  waitingPerMinute Float            @default(0)
+  freeWaitMinutes  Int              @default(3)
+  currency         String           @default("UGX")
+  updatedAt        DateTime         @updatedAt
 }
 
 // Flat handling surcharges for delicate/awkward items -- a small table instead of hardcoded

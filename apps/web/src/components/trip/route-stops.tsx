@@ -6,11 +6,14 @@ interface RouteStopsProps {
   destinationAddress: string;
   stops?: (TripStop & { contactName?: string })[];
   noun?: string;
+  // The trip has ended, so a stop never reached was skipped rather than still to come.
+  finished?: boolean;
 }
 
-function stopState(stop: TripStop) {
+function stopState(stop: TripStop, finished: boolean) {
   if (stop.departedAt) return { label: "Done", className: "text-neutral-500" };
   if (stop.arrivedAt) return { label: "Waiting here", className: "text-amber-700 font-semibold" };
+  if (finished) return { label: "Skipped", className: "text-neutral-500 line-through" };
   return { label: "Upcoming", className: "text-neutral-500" };
 }
 
@@ -19,6 +22,7 @@ export function RouteStops({
   destinationAddress,
   stops = [],
   noun = "Stop",
+  finished = false,
 }: RouteStopsProps) {
   return (
     <ol className="space-y-1.5 text-sm">
@@ -29,7 +33,7 @@ export function RouteStops({
         <span className="text-neutral-700">{pickupAddress}</span>
       </li>
       {stops.map((stop, i) => {
-        const state = stopState(stop);
+        const state = stopState(stop, finished);
         return (
           <li key={stop.id} className="flex gap-2">
             <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-600 text-[11px] font-bold text-white">

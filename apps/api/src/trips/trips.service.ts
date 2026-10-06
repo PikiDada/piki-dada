@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaymentStatus, Prisma, RideType, TripStatus } from '@prisma/client';
+import {
+  PaymentStatus,
+  Prisma,
+  RideType,
+  TripStatus,
+  UnvisitedStopsPolicy,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MAX_STOPS, PricingService } from './pricing.service';
 import { TripsGateway } from './trips.gateway';
@@ -19,7 +25,6 @@ import { decryptUserPhone } from '../common/field-encryption';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
 
 const SEARCH_RADIUS_KM = 6;
-export const PLATFORM_COMMISSION_RATE = 0.15;
 
 const STOP_EDITABLE_STATUSES: TripStatus[] = [
   TripStatus.SEARCHING,
@@ -83,6 +88,8 @@ export class TripsService {
         currency: estimate.currency,
         couponCode: dto.couponCode,
         paymentMethod: dto.paymentMethod,
+        waitingPerMinute: estimate.waitingPerMinute,
+        freeWaitMinutes: estimate.freeWaitMinutes,
         stops: {
           create: stops.map((s, i) => ({
             sequence: i,
@@ -100,11 +107,10 @@ export class TripsService {
       { label: dto.destinationAddress, ...destination },
     ]);
 
-    const nearbyDrivers = await this.pricing.findNearbyDrivers(
-      dto.rideType,
-      pickup,
-      SEARCH_RADIUS_KM,
-    );
+    const [nearbyDrivers, { averageSpeedKmh }] = await Promise.all([
+      this.pricing.findNearbyDrivers(dto.rideType, pickup, SEARCH_RADIUS_KM),
+      this.pricing.settings(),
+    ]);
     for (const driver of nearbyDrivers) {
       this.gateway.emitToUser(driver.userId, SOCKET_EVENTS.TRIP_REQUESTED, {
         tripId: trip.id,
@@ -114,7 +120,10 @@ export class TripsService {
         rideType: trip.rideType,
         stopCount: trip.stops.length,
         distanceToPickupKm: Number(driver.distanceKm.toFixed(2)),
-        etaToPickupMin: this.pricing.etaMinutesForDistance(driver.distanceKm),
+        etaToPickupMin: this.pricing.etaMinutesForDistance(
+          driver.distanceKm,
+          averageSpeedKmh,
+        ),
       });
     }
 
@@ -200,12 +209,7 @@ export class TripsService {
       const finalFare =
         trip.status === TripStatus.COMPLETED
           ? (trip.fare ?? 0)
-          : await this.applyWaitingFee(
-              tripId,
-              trip.rideType,
-              trip.fare ?? 0,
-              now,
-            );
+          : await this.finalizeFare(trip, now);
 
       // Payment always starts PENDING, even for CASH: the driver wallet is only credited once
       // the payment is actually confirmed (passenger cash confirmation, or a payment webhook),
@@ -248,29 +252,60 @@ export class TripsService {
     return updated;
   }
 
-  // Closes a stop the driver is still waiting at (completing the trip there is an explicit
-  // tap, so the wait is real), then adds the waiting charge to the fare. `fare` must hold the
-  // final amount because payments and driver earnings read it.
-  private async applyWaitingFee(
-    tripId: string,
-    rideType: RideType,
-    quotedFare: number,
+  // Works out what the passenger actually owes once the trip ends. `fare` must hold that final
+  // amount because payments and driver earnings read it.
+  //
+  // 1. A stop the driver is still waiting at is closed: ending the trip there is an explicit
+  //    tap, so the wait is real.
+  // 2. Stops never reached are dropped from the fare when the admin's policy says so
+  //    (PricingSettings.unvisitedStopsPolicy). Never above the quote: skipping a stop must not
+  //    cost more because routing came back different.
+  // 3. Waiting time is added at the rates the trip was booked under.
+  private async finalizeFare(
+    trip: Prisma.TripGetPayload<object>,
     completedAt: Date,
   ): Promise<number> {
     await this.prisma.tripStop.updateMany({
-      where: { tripId, arrivedAt: { not: null }, departedAt: null },
+      where: { tripId: trip.id, arrivedAt: { not: null }, departedAt: null },
       data: { departedAt: completedAt },
     });
-    const stops = await this.prisma.tripStop.findMany({ where: { tripId } });
-    const waitingFee = await this.pricing.tripWaitingFee(rideType, stops);
-    if (waitingFee === 0) return quotedFare;
+    const [stops, settings] = await Promise.all([
+      this.prisma.tripStop.findMany({
+        where: { tripId: trip.id },
+        ...ORDERED_STOPS,
+      }),
+      this.pricing.settings(),
+    ]);
 
-    const finalFare = quotedFare + waitingFee;
-    await this.prisma.trip.update({
-      where: { id: tripId },
-      data: { waitingFee, fare: finalFare },
-    });
+    let fare = trip.fare ?? 0;
+    const reached = stops.filter((s) => s.arrivedAt);
+    if (
+      reached.length < stops.length &&
+      settings.unvisitedStopsPolicy === UnvisitedStopsPolicy.REMOVE_FROM_FARE
+    ) {
+      const repriced = await this.pricing.estimateFare(
+        trip.rideType,
+        { lat: trip.pickupLat, lng: trip.pickupLng },
+        { lat: trip.destinationLat, lng: trip.destinationLng },
+        reached,
+      );
+      fare = Math.min(fare, repriced.fare);
+    }
+
+    const waitingFee = await this.pricing.waitingFee(trip, stops);
+    const finalFare = fare + waitingFee;
+    if (finalFare !== trip.fare || waitingFee > 0) {
+      await this.prisma.trip.update({
+        where: { id: trip.id },
+        data: { waitingFee, fare: finalFare },
+      });
+    }
     return finalFare;
+  }
+
+  // What the booking page shows, before the passenger requests a ride.
+  waitingPolicy(rideType: RideType) {
+    return this.pricing.rideWaitingPolicy(rideType);
   }
 
   async previewStops(

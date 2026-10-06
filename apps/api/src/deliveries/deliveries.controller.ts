@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   FileTypeValidator,
@@ -9,6 +10,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -42,6 +44,12 @@ export class DeliveriesController {
   @Get('size-tiers')
   listSizeTiers() {
     return this.deliveriesService.listSizeTiers();
+  }
+
+  @Get('waiting-policy')
+  waitingPolicy(@Query('sizeTierId') sizeTierId: string) {
+    if (!sizeTierId) throw new BadRequestException('sizeTierId is required');
+    return this.deliveriesService.waitingPolicy(sizeTierId);
   }
 
   // Separate from request() so the photo lands in storage (and gets a URL) before the
