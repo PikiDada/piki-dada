@@ -2,6 +2,16 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Sized for a small server shared with the rest of the stack. Holds two databases: the
+    # app's (POSTGRES_DB) and the maps platform's own (`maps`, created by that service).
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c effective_cache_size=512MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c max_connections=40
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -18,6 +28,7 @@ services:
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
+    mem_limit: 256m
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -51,11 +62,15 @@ services:
   # regardless of where this stack runs, so it needs no service in this compose file and no
   # reconfiguration when this moves between hosts.
 
-  # Self-hosted road-distance/duration routing (free, no per-request cost) -- see
-  # OSRM_URL's comment in apps/api/.env.example for where this fits in the fallback chain.
-  # Deliberately NOT wired into api's `depends_on`: the app already falls back to Google
-  # Routes (or a straight-line estimate) if this is absent or down, so it's fine to bring the
-  # rest of the stack up before this is ready.
+  # Self-hosted road-distance/duration routing (free, no per-request cost). Only the maps
+  # service talks to it; Piki Dada asks the maps service. Deliberately NOT wired into
+  # anything's `depends_on`: pricing falls back to Google Routes (or a straight-line estimate)
+  # if this is absent or down, so it's fine to bring the rest of the stack up before this is
+  # ready.
+  #
+  # deploy/osrm/run.sh applies the speeds the maps service learns from real trips
+  # (/traffic/speeds.csv) once a day, and serves with --mmap so the routing data is read from
+  # disk on demand rather than held entirely in memory.
   #
   # Unlike every other service here, this one needs a one-time (or periodic, if you want
   # fresher map data later) data-preparation step BEFORE it can serve anything -- osrm-routed
@@ -76,34 +91,75 @@ services:
   # (osrm-extract's exact output-path handling varies by image version -- check what lands
   # where before the mv step; simplest is often to run osrm-extract with /data mounted
   # directly to the same volume osrm-routed will read from, skipping the copy entirely.)
-  # The car profile is intentional, not a placeholder -- see pricing.service.ts's comment on
-  # computeOsrmRoute for why there's no dedicated motorcycle profile to use instead.
+  # The car profile is intentional, not a placeholder: OSRM ships no motorcycle profile, and
+  # the speeds learned from real boda trips correct it where it matters.
   osrm:
     image: osrm/osrm-backend
     restart: unless-stopped
-    command: osrm-routed --algorithm mld /data/uganda-latest.osrm
+    entrypoint: ["/bin/sh", "/run.sh"]
+    mem_limit: 1536m
     volumes:
       - osrm_data:/data
+      - osrm_traffic:/traffic:ro
+      - ./deploy/osrm/run.sh:/run.sh:ro
+
+  # The independent maps platform (services/maps, Go). Piki Dada sends it GPS traces and
+  # chosen addresses, and asks it for routes; it learns road speeds from the traces and
+  # writes them to /traffic for the osrm service. Keeps its own `maps` database in the same
+  # Postgres server, created on first start. Internal only: not exposed through Caddy.
+  maps:
+    build:
+      context: services/maps
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: maps
+      PGSSLMODE: disable
+      OSRM_URL: http://osrm:5000
+      API_TOKEN: ${MAPS_PLATFORM_TOKEN:?set MAPS_PLATFORM_TOKEN in .env}
+    volumes:
+      - osrm_traffic:/traffic
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/mapsd", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    mem_limit: 384m
     env_file:
       - apps/api/.env
+    environment:
+      MAPS_PLATFORM_URL: http://maps:8080
+      MAPS_PLATFORM_TOKEN: ${MAPS_PLATFORM_TOKEN}
+      # Caps the JS heap below the container limit, so Node collects garbage instead of
+      # growing until the container is killed.
+      NODE_OPTIONS: --max-old-space-size=256
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      # node:22-slim has no wget/curl; Node's built-in fetch does the same check.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4001/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
 
-  web:
+  # Serves the website too: apps/web/Dockerfile builds the site as plain files into this
+  # Caddy image, so there's no separate web container or Node process for it.
+  caddy:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -111,12 +167,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     restart: unless-stopped
-    depends_on:
-      - api
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"
@@ -126,12 +177,12 @@ services:
       - caddy_config:/config
     depends_on:
       - api
-      - web
       - minio
 
 volumes:
   postgres_data:
   minio_data:
   osrm_data:
+  osrm_traffic:
   caddy_data:
   caddy_config:

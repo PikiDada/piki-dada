@@ -1,16 +1,21 @@
 "use client";
 
+import { IdFromQuery } from "@/components/routing/id-from-query";
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { TripMap } from "@/components/maps/trip-map";
 import { CancelTripDialog } from "@/components/trip/cancel-trip-dialog";
+import { EditStopsPanel } from "@/components/trip/edit-stops-panel";
+import { RouteStops } from "@/components/trip/route-stops";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { SOCKET_EVENTS, type LatLng, type Trip } from "@/lib/types";
+import { stopLocations, stopProgress } from "@/lib/stops";
+import { MAX_STOPS, SOCKET_EVENTS, type LatLng, type Trip } from "@/lib/types";
 
 const CANCELLABLE_STATUSES = ["SEARCHING", "ACCEPTED", "ARRIVED"];
+const STOP_EDITABLE_STATUSES = ["SEARCHING", "ACCEPTED", "ARRIVED", "IN_PROGRESS"];
 
 const STATUS_LABEL: Record<string, string> = {
   SEARCHING: "Looking for a rider nearby...",
@@ -21,14 +26,14 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: "Trip cancelled",
 };
 
-export default function PassengerTripPage() {
-  const { id } = useParams<{ id: string }>();
+function PassengerTripView({ id }: { id: string }) {
   const router = useRouter();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [driverLocation, setDriverLocation] = useState<LatLng | undefined>();
   const [stars, setStars] = useState(5);
   const [rated, setRated] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [editingStops, setEditingStops] = useState(false);
 
   useEffect(() => {
     apiFetch<Trip>(`/trips/${id}`).then(setTrip);
@@ -92,6 +97,7 @@ export default function PassengerTripPage() {
         <TripMap
           pickup={{ lat: trip.pickupLat, lng: trip.pickupLng }}
           destination={{ lat: trip.destinationLat, lng: trip.destinationLng }}
+          stops={stopLocations(trip.stops)}
           driverLocation={
             driverLocation ??
             (trip.driver?.currentLat
@@ -108,12 +114,38 @@ export default function PassengerTripPage() {
           {trip.status === "CANCELLED" && trip.cancellationReason && (
             <p className="text-sm text-red-600">Reason: {trip.cancellationReason}</p>
           )}
-          <p className="text-sm text-neutral-600">
-            {trip.pickupAddress} → {trip.destinationAddress}
-          </p>
+          <RouteStops
+            pickupAddress={trip.pickupAddress}
+            destinationAddress={trip.destinationAddress}
+            stops={trip.stops}
+          />
           <p className="text-2xl font-bold">
             {trip.fare?.toLocaleString()} {trip.currency}
           </p>
+          {!!trip.waitingFee && (
+            <p className="text-sm text-neutral-600">
+              Includes {trip.waitingFee.toLocaleString()} {trip.currency} for waiting at stops
+            </p>
+          )}
+
+          {STOP_EDITABLE_STATUSES.includes(trip.status) &&
+            stopProgress(trip.stops).locked.length < MAX_STOPS &&
+            (editingStops ? (
+              <EditStopsPanel<Trip>
+                basePath={`/trips/${id}`}
+                stops={trip.stops ?? []}
+                currency={trip.currency}
+                onSaved={(updated) => {
+                  setTrip(updated);
+                  setEditingStops(false);
+                }}
+                onClose={() => setEditingStops(false)}
+              />
+            ) : (
+              <Button variant="outline" className="w-full" onClick={() => setEditingStops(true)}>
+                {trip.stops?.length ? "Change stops" : "Add a stop"}
+              </Button>
+            ))}
 
           {trip.driver && (
             <div className="rounded-xl bg-neutral-50 p-3 text-sm">
@@ -198,4 +230,8 @@ export default function PassengerTripPage() {
       )}
     </div>
   );
+}
+
+export default function PassengerTripPage() {
+  return <IdFromQuery>{(id) => <PassengerTripView id={id} />}</IdFromQuery>;
 }

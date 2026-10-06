@@ -3,7 +3,52 @@
 # needed here.
 
 pikidada.com, www.pikidada.com {
-	reverse_proxy web:3000
+	# The website is plain files built into this image (apps/web/Dockerfile).
+	root * /srv
+	encode zstd gzip
+
+	# Moved here from next.config.ts: a static site can't set headers itself.
+	# script-src keeps 'unsafe-inline' because Next.js's own hydration scripts need it (a
+	# stricter nonce policy broke Next's chunk loading); the app has no dangerouslySetInnerHTML,
+	# so there's no injection point for it to matter. files.pikidada.com serves uploaded
+	# documents from MinIO; the Cloudinary/Supabase hosts stay for images uploaded before the move.
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://files.pikidada.com https://res.cloudinary.com https://*.supabase.co https://*.googleusercontent.com; connect-src 'self' https://api.pikidada.com wss://api.pikidada.com https://maps.googleapis.com https://places.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=()"
+	}
+
+	# Build assets have content hashes in their names and never change; everything else is
+	# re-checked so a new deploy is picked up straight away.
+	@hashed path /_next/static/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@unhashed not path /_next/static/*
+	header @unhashed Cache-Control "no-cache"
+
+	# Detail pages used to take the id in the path (/passenger/trip/<id>). Old links still
+	# arrive: bookmarks, notifications, and payment-provider return URLs issued before the
+	# switch to ?id=.
+	@legacyDetail {
+		path_regexp legacy ^/(passenger|driver)/(trip|delivery)/([^/]+)$
+		not path /passenger/delivery/new
+	}
+	redir @legacyDetail /{re.legacy.1}/{re.legacy.2}?id={re.legacy.3}&{query} 302
+
+	@legacyUser {
+		path_regexp legacyUser ^/admin/users/([^/]+)$
+		not path /admin/users/detail
+	}
+	redir @legacyUser /admin/users/detail?id={re.legacyUser.1} 302
+
+	try_files {path} {path}.html {path}/index.html
+	file_server
+
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
 }
 
 api.pikidada.com {

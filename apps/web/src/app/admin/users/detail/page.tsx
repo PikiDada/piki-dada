@@ -1,8 +1,8 @@
 "use client";
 
+import { IdFromQuery } from "@/components/routing/id-from-query";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
@@ -125,8 +125,7 @@ function TripRow({ trip, otherPartyLabel }: { trip: DetailTrip; otherPartyLabel:
   );
 }
 
-export default function AdminUserDetailPage() {
-  const { id } = useParams<{ id: string }>();
+function AdminUserDetailView({ id }: { id: string }) {
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -350,4 +349,8 @@ export default function AdminUserDetailPage() {
       )}
     </div>
   );
+}
+
+export default function AdminUserDetailPage() {
+  return <IdFromQuery>{(id) => <AdminUserDetailView id={id} />}</IdFromQuery>;
 }

@@ -17,6 +17,7 @@ interface IncomingRequest {
   destinationAddress: string;
   fare: number;
   rideType: string;
+  stopCount?: number;
   distanceToPickupKm?: number;
   etaToPickupMin?: number;
 }
@@ -27,6 +28,7 @@ interface IncomingDeliveryRequest {
   destinationAddress: string;
   itemDescription: string;
   fare: number;
+  stopCount?: number;
   distanceToPickupKm?: number;
   etaToPickupMin?: number;
 }
@@ -123,7 +125,7 @@ export default function DriverDashboardPage() {
     if (!incoming) return;
     try {
       await apiFetch(`/trips/${incoming.tripId}/accept`, { method: "PATCH" });
-      router.push(`/driver/trip/${incoming.tripId}`);
+      router.push(`/driver/trip?id=${incoming.tripId}`);
     } catch (err) {
       setAcceptError(err instanceof Error ? err.message : "Trip is no longer available");
       setIncoming(null);
@@ -140,7 +142,7 @@ export default function DriverDashboardPage() {
     if (!incomingDelivery) return;
     try {
       await apiFetch(`/deliveries/${incomingDelivery.deliveryId}/accept`, { method: "PATCH" });
-      router.push(`/driver/delivery/${incomingDelivery.deliveryId}`);
+      router.push(`/driver/delivery?id=${incomingDelivery.deliveryId}`);
     } catch (err) {
       setAcceptError(err instanceof Error ? err.message : "Delivery is no longer available");
       setIncomingDelivery(null);
@@ -176,6 +178,11 @@ export default function DriverDashboardPage() {
           <p className="text-sm text-neutral-600">
             {incoming.pickupAddress} → {incoming.destinationAddress}
           </p>
+          {!!incoming.stopCount && (
+            <p className="text-sm font-medium text-amber-700">
+              +{incoming.stopCount} stop{incoming.stopCount > 1 ? "s" : ""} on the way
+            </p>
+          )}
           <p className="text-lg font-bold">{incoming.fare?.toLocaleString()} UGX</p>
           {incoming.distanceToPickupKm != null && (
             <p className="mt-1 text-sm font-medium text-neutral-700">
@@ -200,6 +207,12 @@ export default function DriverDashboardPage() {
           <p className="text-sm text-neutral-600">
             {incomingDelivery.pickupAddress} → {incomingDelivery.destinationAddress}
           </p>
+          {!!incomingDelivery.stopCount && (
+            <p className="text-sm font-medium text-amber-700">
+              +{incomingDelivery.stopCount} extra drop-off
+              {incomingDelivery.stopCount > 1 ? "s" : ""}
+            </p>
+          )}
           <p className="text-sm text-neutral-600">{incomingDelivery.itemDescription}</p>
           <p className="text-lg font-bold">{incomingDelivery.fare?.toLocaleString()} UGX</p>
           {incomingDelivery.distanceToPickupKm != null && (

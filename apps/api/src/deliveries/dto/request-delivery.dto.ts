@@ -1,12 +1,18 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsNumber,
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { PaymentMethod } from '@prisma/client';
+import { MAX_STOPS } from '../../trips/pricing.service';
+import { DeliveryStopInputDto } from './delivery-stop-input.dto';
 
 export class RequestDeliveryDto {
   @IsString()
@@ -45,6 +51,14 @@ export class RequestDeliveryDto {
 
   @IsString()
   destinationAddress: string;
+
+  // Extra drop-offs visited before the final one above.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_STOPS)
+  @ValidateNested({ each: true })
+  @Type(() => DeliveryStopInputDto)
+  stops?: DeliveryStopInputDto[];
 
   @IsString()
   itemDescription: string;

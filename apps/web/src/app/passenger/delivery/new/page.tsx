@@ -12,8 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { LatLng, Delivery, DeliveryCategory, DeliverySizeTier } from "@/lib/types";
+import {
+  FREE_WAIT_MINUTES_PER_STOP,
+  MAX_STOPS,
+  type LatLng,
+  type Delivery,
+  type DeliveryCategory,
+  type DeliverySizeTier,
+} from "@/lib/types";
+import { stopsPayload, stopsReady, type StopDraft } from "@/lib/stops";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
+import { StopListEditor } from "@/components/trip/stop-list-editor";
 
 export default function NewDeliveryPage() {
   const router = useRouter();
@@ -32,6 +41,7 @@ export default function NewDeliveryPage() {
   const [destination, setDestination] = useState<LatLng | undefined>();
   const [dropoffContactName, setDropoffContactName] = useState("");
   const [dropoffContactPhone, setDropoffContactPhone] = useState("");
+  const [stops, setStops] = useState<StopDraft[]>([]);
 
   const [itemDescription, setItemDescription] = useState("");
   const [itemPhotoUrl, setItemPhotoUrl] = useState<string | null>(null);
@@ -63,7 +73,8 @@ export default function NewDeliveryPage() {
     pickupContactPhone &&
     dropoffContactName &&
     dropoffContactPhone &&
-    itemDescription;
+    itemDescription &&
+    stopsReady(stops, true);
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -126,6 +137,7 @@ export default function NewDeliveryPage() {
             destinationAddress,
             dropoffContactName,
             dropoffContactPhone,
+            stops: stopsPayload(stops, true),
             itemDescription,
             itemPhotoUrl,
             isFragile,
@@ -135,7 +147,7 @@ export default function NewDeliveryPage() {
           }),
         },
       );
-      router.push(`/passenger/delivery/${delivery.id}`);
+      router.push(`/passenger/delivery?id=${delivery.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not request delivery");
     } finally {
@@ -146,7 +158,12 @@ export default function NewDeliveryPage() {
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50 pb-24">
       <div className="relative">
-        <TripMap pickup={pickup} destination={destination} height="220px" />
+        <TripMap
+          pickup={pickup}
+          destination={destination}
+          stops={stops.flatMap((s) => (s.location ? [s.location] : []))}
+          height="220px"
+        />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-neutral-50 to-transparent" />
       </div>
 
@@ -263,8 +280,26 @@ export default function NewDeliveryPage() {
             </div>
           </div>
 
+          <div className="space-y-2">
+            <StopListEditor
+              stops={stops}
+              onChange={setStops}
+              max={MAX_STOPS}
+              withContact
+              noun="drop-off"
+            />
+            {stops.length > 0 && (
+              <p className="text-xs text-neutral-500">
+                The rider visits these in order before the final drop-off. Waiting at each is
+                free for {FREE_WAIT_MINUTES_PER_STOP} minutes, then charged per minute.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-2 rounded-2xl bg-neutral-100 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Drop-off</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              {stops.length > 0 ? "Final drop-off" : "Drop-off"}
+            </p>
             <PlaceInput
               placeholder="Drop-off location"
               value={destinationAddress}

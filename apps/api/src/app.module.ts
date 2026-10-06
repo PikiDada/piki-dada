@@ -15,6 +15,7 @@ import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
+import { MapsPlatformModule } from './maps-platform/maps-platform.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { PushModule } from './push/push.module';
       { ttl: 60000, limit: 100, skipIf: () => process.env.NODE_ENV === 'test' },
     ]),
     PrismaModule,
+    MapsPlatformModule,
     AuthModule,
     UsersModule,
     DriversModule,

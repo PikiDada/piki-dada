@@ -4,19 +4,48 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DeliveryStatus, PaymentStatus, RideType } from '@prisma/client';
+import {
+  DeliveryStatus,
+  PaymentStatus,
+  Prisma,
+  RideType,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PricingService } from '../trips/pricing.service';
+import { MAX_STOPS, PricingService } from '../trips/pricing.service';
 import { TripsGateway } from '../trips/trips.gateway';
 import { SOCKET_EVENTS } from '../trips/socket-events';
 import { RequestDeliveryDto } from './dto/request-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { ReplaceDeliveryStopsDto } from './dto/delivery-stop-input.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { decryptUserPhone } from '../common/field-encryption';
+import { MapsPlatformService } from '../maps-platform/maps-platform.service';
 
 // Deliveries always match BODA-vehicle riders -- there's no rideType choice in the delivery
 // request itself, unlike ride booking.
 const SEARCH_RADIUS_KM = 6;
+
+const STOP_EDITABLE_STATUSES: DeliveryStatus[] = [
+  DeliveryStatus.SEARCHING,
+  DeliveryStatus.ACCEPTED,
+  DeliveryStatus.ARRIVED_PICKUP,
+  DeliveryStatus.PICKED_UP,
+];
+
+// Same tie-break as trips.service.ts's ORDERED_STOPS -- see its comment.
+const ORDERED_STOPS = {
+  orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
+} satisfies Prisma.Delivery$stopsArgs;
+
+const DELIVERY_DETAIL_INCLUDE = {
+  rider: {
+    include: { vehicle: true, user: { omit: { passwordHash: true } } },
+  },
+  sender: { omit: { passwordHash: true } },
+  payment: true,
+  category: true,
+  stops: ORDERED_STOPS,
+} satisfies Prisma.DeliveryInclude;
 
 @Injectable()
 export class DeliveriesService {
@@ -25,19 +54,23 @@ export class DeliveriesService {
     private pricing: PricingService,
     private gateway: TripsGateway,
     private notifications: NotificationsService,
+    private maps: MapsPlatformService,
   ) {}
 
   async requestDelivery(senderId: string, dto: RequestDeliveryDto) {
     const pickup = { lat: dto.pickupLat, lng: dto.pickupLng };
     const destination = { lat: dto.destinationLat, lng: dto.destinationLng };
+    const stops = dto.stops ?? [];
     const estimate = await this.pricing.estimateDeliveryFare(
       dto.sizeTierId,
       { isFragile: dto.isFragile ?? false, isLiquid: dto.isLiquid ?? false },
       pickup,
       destination,
+      stops,
     );
 
     const delivery = await this.prisma.delivery.create({
+      include: { stops: ORDERED_STOPS },
       data: {
         senderId,
         categoryId: dto.categoryId,
@@ -63,8 +96,24 @@ export class DeliveriesService {
         fare: estimate.fare,
         currency: estimate.currency,
         paymentMethod: dto.paymentMethod,
+        stops: {
+          create: stops.map((s, i) => ({
+            sequence: i,
+            address: s.address,
+            lat: s.lat,
+            lng: s.lng,
+            contactName: s.contactName,
+            contactPhone: s.contactPhone,
+          })),
+        },
       },
     });
+
+    this.maps.recordPlaces([
+      { label: dto.pickupAddress, ...pickup },
+      ...stops.map((s) => ({ label: s.address, lat: s.lat, lng: s.lng })),
+      { label: dto.destinationAddress, ...destination },
+    ]);
 
     const nearbyRiders = await this.pricing.findNearbyDrivers(
       RideType.BODA,
@@ -78,6 +127,7 @@ export class DeliveriesService {
         destinationAddress: delivery.destinationAddress,
         itemDescription: delivery.itemDescription,
         fare: delivery.fare,
+        stopCount: delivery.stops.length,
         distanceToPickupKm: Number(rider.distanceKm.toFixed(2)),
         etaToPickupMin: this.pricing.etaMinutesForDistance(rider.distanceKm),
       });
@@ -105,16 +155,7 @@ export class DeliveriesService {
       throw new BadRequestException('Delivery is no longer available');
     }
 
-    const updated = this.decryptDeliveryPhones(
-      await this.prisma.delivery.findUniqueOrThrow({
-        where: { id: deliveryId },
-        include: {
-          rider: {
-            include: { vehicle: true, user: { omit: { passwordHash: true } } },
-          },
-        },
-      }),
-    );
+    const updated = await this.loadDelivery(deliveryId);
 
     this.gateway.emitToUser(
       updated.senderId,
@@ -143,7 +184,7 @@ export class DeliveriesService {
   ) {
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
-      include: { rider: true, sender: true },
+      include: { rider: true, sender: true, stops: true },
     });
     if (!delivery) throw new NotFoundException('Delivery not found');
 
@@ -152,14 +193,24 @@ export class DeliveriesService {
     if (!isSender && !isRider) {
       throw new ForbiddenException('Not part of this delivery');
     }
+    // Unlike a ride, skipping a drop-off leaves someone's item undelivered.
+    if (
+      dto.status === DeliveryStatus.ARRIVED_DROPOFF &&
+      delivery.stops.some((s) => !s.departedAt)
+    ) {
+      throw new BadRequestException(
+        'Complete every drop-off before the final one',
+      );
+    }
 
     const timestampField = this.timestampFieldFor(dto.status);
+    const now = new Date();
     await this.prisma.delivery.update({
       where: { id: deliveryId },
       data: {
         status: dto.status,
         cancellationReason: dto.cancellationReason,
-        ...(timestampField ? { [timestampField]: new Date() } : {}),
+        ...(timestampField ? { [timestampField]: now } : {}),
         // See TripsService.updateStatus's matching comment -- only a sender cancelling their
         // own request counts toward the admin over-cancellation flag.
         ...(dto.status === DeliveryStatus.CANCELLED
@@ -169,12 +220,22 @@ export class DeliveriesService {
     });
 
     if (dto.status === DeliveryStatus.DELIVERED) {
+      const finalFare =
+        delivery.status === DeliveryStatus.DELIVERED
+          ? (delivery.fare ?? 0)
+          : await this.applyWaitingFee(
+              deliveryId,
+              delivery.sizeTierId,
+              delivery.fare ?? 0,
+              now,
+            );
+
       // Payment always starts PENDING, even for CASH — see TripsService.updateStatus's
       // matching comment for why.
       await this.prisma.deliveryPayment.create({
         data: {
           deliveryId,
-          amount: delivery.fare ?? 0,
+          amount: finalFare,
           currency: delivery.currency,
           method: delivery.paymentMethod,
           status: PaymentStatus.PENDING,
@@ -189,31 +250,238 @@ export class DeliveriesService {
       this.notifications.notifyUser(
         delivery.senderId,
         'Delivery completed',
-        `Your delivery is complete. Fare: ${delivery.fare} ${delivery.currency}.`,
+        `Your delivery is complete. Fare: ${finalFare} ${delivery.currency}.`,
       );
     }
 
-    const updated = this.decryptDeliveryPhones(
-      await this.prisma.delivery.findUniqueOrThrow({
-        where: { id: deliveryId },
-        include: {
-          rider: {
-            include: { vehicle: true, user: { omit: { passwordHash: true } } },
-          },
-          sender: { omit: { passwordHash: true } },
-          payment: true,
-        },
-      }),
-    );
-
-    const event =
+    const updated = await this.loadDelivery(deliveryId);
+    this.broadcast(
+      updated,
       dto.status === DeliveryStatus.CANCELLED
         ? SOCKET_EVENTS.DELIVERY_CANCELLED
-        : SOCKET_EVENTS.DELIVERY_STATUS_UPDATED;
-    this.gateway.emitToDelivery(deliveryId, event, updated);
-    this.gateway.emitToUser(delivery.senderId, event, updated);
-
+        : SOCKET_EVENTS.DELIVERY_STATUS_UPDATED,
+    );
     return updated;
+  }
+
+  // Same rules as TripsService.applyWaitingFee -- see its comment.
+  private async applyWaitingFee(
+    deliveryId: string,
+    sizeTierId: string | null,
+    quotedFare: number,
+    deliveredAt: Date,
+  ): Promise<number> {
+    await this.prisma.deliveryStop.updateMany({
+      where: { deliveryId, arrivedAt: { not: null }, departedAt: null },
+      data: { departedAt: deliveredAt },
+    });
+    const stops = await this.prisma.deliveryStop.findMany({
+      where: { deliveryId },
+    });
+    const waitingFee = await this.pricing.deliveryWaitingFee(sizeTierId, stops);
+    if (waitingFee === 0) return quotedFare;
+
+    const finalFare = quotedFare + waitingFee;
+    await this.prisma.delivery.update({
+      where: { id: deliveryId },
+      data: { waitingFee, fare: finalFare },
+    });
+    return finalFare;
+  }
+
+  async previewStops(
+    senderId: string,
+    deliveryId: string,
+    dto: ReplaceDeliveryStopsDto,
+  ) {
+    const { delivery, lockedStops } = await this.editableDelivery(
+      senderId,
+      deliveryId,
+      dto,
+    );
+    const estimate = await this.estimateWithStops(delivery, [
+      ...lockedStops,
+      ...dto.stops,
+    ]);
+    return { ...estimate, previousFare: delivery.fare };
+  }
+
+  async replaceStops(
+    senderId: string,
+    deliveryId: string,
+    dto: ReplaceDeliveryStopsDto,
+  ) {
+    const { delivery, lockedStops } = await this.editableDelivery(
+      senderId,
+      deliveryId,
+      dto,
+    );
+    const estimate = await this.estimateWithStops(delivery, [
+      ...lockedStops,
+      ...dto.stops,
+    ]);
+
+    await this.prisma.$transaction([
+      this.prisma.deliveryStop.deleteMany({
+        where: { deliveryId, arrivedAt: null },
+      }),
+      this.prisma.deliveryStop.createMany({
+        data: dto.stops.map((s, i) => ({
+          deliveryId,
+          sequence: lockedStops.length + i,
+          address: s.address,
+          lat: s.lat,
+          lng: s.lng,
+          contactName: s.contactName,
+          contactPhone: s.contactPhone,
+        })),
+      }),
+      this.prisma.delivery.update({
+        where: { id: deliveryId },
+        data: {
+          fare: estimate.fare,
+          distanceKm: estimate.distanceKm,
+          durationMin: estimate.durationMin,
+        },
+      }),
+    ]);
+
+    this.maps.recordPlaces(
+      dto.stops.map((s) => ({ label: s.address, lat: s.lat, lng: s.lng })),
+    );
+
+    const updated = await this.loadDelivery(deliveryId);
+    this.broadcast(updated, SOCKET_EVENTS.DELIVERY_STATUS_UPDATED);
+    if (updated.rider) {
+      this.notifications.notifyUser(
+        updated.rider.userId,
+        'Drop-offs changed',
+        `The sender updated their drop-offs. New fare: ${estimate.fare} ${estimate.currency}.`,
+      );
+    }
+    return updated;
+  }
+
+  private estimateWithStops(
+    delivery: Prisma.DeliveryGetPayload<object>,
+    stops: { lat: number; lng: number }[],
+  ) {
+    if (!delivery.sizeTierId) {
+      throw new BadRequestException(
+        'This delivery has no size tier to price it with',
+      );
+    }
+    return this.pricing.estimateDeliveryFare(
+      delivery.sizeTierId,
+      { isFragile: delivery.isFragile, isLiquid: delivery.isLiquid },
+      { lat: delivery.pickupLat, lng: delivery.pickupLng },
+      { lat: delivery.destinationLat, lng: delivery.destinationLng },
+      stops,
+    );
+  }
+
+  private async editableDelivery(
+    senderId: string,
+    deliveryId: string,
+    dto: ReplaceDeliveryStopsDto,
+  ) {
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: { stops: ORDERED_STOPS },
+    });
+    if (!delivery) throw new NotFoundException('Delivery not found');
+    if (delivery.senderId !== senderId) {
+      throw new ForbiddenException('Not your delivery');
+    }
+    if (!STOP_EDITABLE_STATUSES.includes(delivery.status)) {
+      throw new BadRequestException(
+        'Drop-offs can no longer be changed on this delivery',
+      );
+    }
+    const lockedStops = delivery.stops.filter((s) => s.arrivedAt);
+    if (lockedStops.length + dto.stops.length > MAX_STOPS) {
+      throw new BadRequestException(
+        `A delivery can have at most ${MAX_STOPS} extra drop-offs`,
+      );
+    }
+    return { delivery, lockedStops };
+  }
+
+  // Extra drop-offs are visited in order, after pickup (PICKED_UP) and before the final one.
+  async arriveAtStop(riderUserId: string, deliveryId: string, stopId: string) {
+    const delivery = await this.pickedUpDeliveryForRider(
+      riderUserId,
+      deliveryId,
+    );
+    const next = delivery.stops.find((s) => !s.arrivedAt);
+    if (!next || next.id !== stopId) {
+      throw new BadRequestException('That is not the next drop-off');
+    }
+    if (delivery.stops.some((s) => s.arrivedAt && !s.departedAt)) {
+      throw new BadRequestException('Finish the current drop-off first');
+    }
+    await this.prisma.deliveryStop.update({
+      where: { id: stopId },
+      data: { arrivedAt: new Date() },
+    });
+    const updated = await this.loadDelivery(deliveryId);
+    this.broadcast(updated, SOCKET_EVENTS.DELIVERY_STATUS_UPDATED);
+    return updated;
+  }
+
+  async departStop(riderUserId: string, deliveryId: string, stopId: string) {
+    const delivery = await this.pickedUpDeliveryForRider(
+      riderUserId,
+      deliveryId,
+    );
+    const stop = delivery.stops.find((s) => s.id === stopId);
+    if (!stop?.arrivedAt || stop.departedAt) {
+      throw new BadRequestException('You are not at that drop-off');
+    }
+    await this.prisma.deliveryStop.update({
+      where: { id: stopId },
+      data: { departedAt: new Date() },
+    });
+    const updated = await this.loadDelivery(deliveryId);
+    this.broadcast(updated, SOCKET_EVENTS.DELIVERY_STATUS_UPDATED);
+    return updated;
+  }
+
+  private async pickedUpDeliveryForRider(
+    riderUserId: string,
+    deliveryId: string,
+  ) {
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: { rider: true, stops: ORDERED_STOPS },
+    });
+    if (!delivery) throw new NotFoundException('Delivery not found');
+    if (delivery.rider?.userId !== riderUserId) {
+      throw new ForbiddenException('Not your delivery');
+    }
+    if (delivery.status !== DeliveryStatus.PICKED_UP) {
+      throw new BadRequestException(
+        'Pick up the item before visiting drop-offs',
+      );
+    }
+    return delivery;
+  }
+
+  private async loadDelivery(deliveryId: string) {
+    return this.decryptDeliveryPhones(
+      await this.prisma.delivery.findUniqueOrThrow({
+        where: { id: deliveryId },
+        include: DELIVERY_DETAIL_INCLUDE,
+      }),
+    );
+  }
+
+  private broadcast(
+    delivery: Awaited<ReturnType<DeliveriesService['loadDelivery']>>,
+    event: string,
+  ) {
+    this.gateway.emitToDelivery(delivery.id, event, delivery);
+    this.gateway.emitToUser(delivery.senderId, event, delivery);
   }
 
   myDeliveries(userId: string, role: 'PASSENGER' | 'DRIVER') {
@@ -232,14 +500,7 @@ export class DeliveriesService {
   async getDelivery(userId: string, deliveryId: string) {
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
-      include: {
-        rider: {
-          include: { vehicle: true, user: { omit: { passwordHash: true } } },
-        },
-        sender: { omit: { passwordHash: true } },
-        payment: true,
-        category: true,
-      },
+      include: DELIVERY_DETAIL_INCLUDE,
     });
     if (!delivery) throw new NotFoundException('Delivery not found');
     const isSender = delivery.senderId === userId;

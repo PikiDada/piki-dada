@@ -1,5 +1,16 @@
-import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { PaymentMethod, RideType } from '@prisma/client';
+import { MAX_STOPS } from '../pricing.service';
+import { StopInputDto } from './stop-input.dto';
 
 export class RequestTripDto {
   @IsNumber()
@@ -19,6 +30,13 @@ export class RequestTripDto {
 
   @IsString()
   destinationAddress: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_STOPS)
+  @ValidateNested({ each: true })
+  @Type(() => StopInputDto)
+  stops?: StopInputDto[];
 
   @IsEnum(RideType)
   rideType: RideType;

@@ -11,6 +11,7 @@ const Marker = dynamic(() => import("@react-google-maps/api").then((m) => m.Mark
 interface TripMapProps {
   pickup?: LatLng;
   destination?: LatLng;
+  stops?: LatLng[];
   driverLocation?: LatLng;
   height?: string;
 }
@@ -26,12 +27,22 @@ function pinIcon(label: string, background: string): google.maps.Icon {
   };
 }
 
-export function TripMap({ pickup, destination, driverLocation, height = "300px" }: TripMapProps) {
+export function TripMap({
+  pickup,
+  destination,
+  stops = [],
+  driverLocation,
+  height = "300px",
+}: TripMapProps) {
   const isLoaded = useMapsReady();
 
   const pickupIcon = useMemo(() => (isLoaded ? pinIcon("P", "#16a34a") : undefined), [isLoaded]);
   const destinationIcon = useMemo(() => (isLoaded ? pinIcon("D", "#dc2626") : undefined), [isLoaded]);
   const driverIcon = useMemo(() => (isLoaded ? pinIcon("🏍️", "#111827") : undefined), [isLoaded]);
+  const stopIcons = useMemo(
+    () => (isLoaded ? stops.map((_, i) => pinIcon(String(i + 1), "#d97706")) : []),
+    [isLoaded, stops],
+  );
 
   if (!isLoaded) {
     return (
@@ -60,6 +71,9 @@ export function TripMap({ pickup, destination, driverLocation, height = "300px" 
         }}
       >
         {pickup && pickupIcon && <Marker position={pickup} icon={pickupIcon} />}
+        {stops.map((stop, i) => (
+          <Marker key={`${stop.lat},${stop.lng},${i}`} position={stop} icon={stopIcons[i]} />
+        ))}
         {destination && destinationIcon && <Marker position={destination} icon={destinationIcon} />}
         {driverLocation && driverIcon && <Marker position={driverLocation} icon={driverIcon} />}
       </GoogleMap>

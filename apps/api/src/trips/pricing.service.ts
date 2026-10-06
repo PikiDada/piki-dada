@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { RideType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MapsPlatformService } from '../maps-platform/maps-platform.service';
 
 const EARTH_RADIUS_KM = 6371;
 const AVERAGE_SPEED_KMH = 28;
@@ -12,7 +13,6 @@ const AVERAGE_SPEED_KMH = 28;
 // road network -- not exact for any given trip, but far closer than 1x.
 const ROAD_DISTANCE_FALLBACK_FACTOR = 1.3;
 const ROUTES_API_TIMEOUT_MS = 4000;
-const OSRM_TIMEOUT_MS = 4000;
 // Cash is how most trips/deliveries get paid, and nobody wants to carry exact change for a
 // fare like 7,432 UGX -- round every fare (rides and deliveries) to the nearest note
 // denomination instead.
@@ -27,6 +27,28 @@ function roundToNearest(amount: number, unit: number): number {
   return Math.round(amount / unit) * unit;
 }
 
+export const MAX_STOPS = 3;
+export const FREE_WAIT_MINUTES_PER_STOP = 3;
+
+export interface StopVisit {
+  arrivedAt: Date | null;
+  departedAt: Date | null;
+}
+
+// Whole minutes past the free allowance, per stop. A stop the driver never marked as departed
+// is not charged: the alternative (billing until trip completion) can produce a large charge
+// from a forgotten tap.
+function billableWaitMinutes(stops: StopVisit[]): number {
+  let total = 0;
+  for (const stop of stops) {
+    if (!stop.arrivedAt || !stop.departedAt) continue;
+    const waited =
+      (stop.departedAt.getTime() - stop.arrivedAt.getTime()) / 60000;
+    total += Math.max(0, Math.floor(waited - FREE_WAIT_MINUTES_PER_STOP));
+  }
+  return total;
+}
+
 interface RoadRoute {
   distanceKm: number;
   durationMin: number;
@@ -39,6 +61,7 @@ export class PricingService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private maps: MapsPlatformService,
   ) {}
 
   haversineDistanceKm(a: LatLng, b: LatLng): number {
@@ -60,65 +83,30 @@ export class PricingService {
     return Math.round((distanceKm / AVERAGE_SPEED_KMH) * 60);
   }
 
-  // Three-layer fallback, cheapest/free first: self-hosted OSRM (if OSRM_URL is configured)
-  // -> Google Routes API (if GOOGLE_ROUTES_API_KEY is configured) -> straight-line estimate
-  // in the caller. Each layer never throws -- a routing outage, or OSRM simply not being
-  // deployed yet, never blocks a passenger from booking a trip, it just prices a bit less
-  // precisely.
-  private async computeRoadRoute(
-    pickup: LatLng,
-    destination: LatLng,
-  ): Promise<RoadRoute | null> {
-    const osrmUrl = this.config.get<string>('OSRM_URL');
-    if (osrmUrl) {
-      const osrmRoute = await this.computeOsrmRoute(
-        osrmUrl,
-        pickup,
-        destination,
-      );
-      if (osrmRoute) return osrmRoute;
-      this.logger.warn(
-        'OSRM route computation failed, falling back to Google Routes API',
-      );
+  // Sum of straight lines between consecutive points, so stops count toward the estimate too.
+  private straightLineKm(points: LatLng[]): number {
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+      total += this.haversineDistanceKm(points[i - 1], points[i]);
     }
-    return this.computeGoogleRoute(pickup, destination);
+    return total;
   }
 
-  // Same road network a car would use -- OSRM's default profile is "car", and there's no
-  // dedicated motorcycle profile to switch to. Matches the same DRIVE-mode choice already
-  // made for Google Routes below, for the same reason (see its comment).
-  private async computeOsrmRoute(
-    osrmUrl: string,
-    pickup: LatLng,
-    destination: LatLng,
-  ): Promise<RoadRoute | null> {
-    try {
-      // OSRM takes coordinates as lng,lat -- the opposite order from Google's lat,lng above.
-      // Easy to get backwards; this is the one line that matters if routes come back wrong.
-      const url =
-        `${osrmUrl.replace(/\/+$/, '')}/route/v1/driving/` +
-        `${pickup.lng},${pickup.lat};${destination.lng},${destination.lat}` +
-        '?overview=false';
-      const res = await axios.get(url, { timeout: OSRM_TIMEOUT_MS });
-
-      const route = res.data?.routes?.[0];
-      const distanceMeters = route?.distance;
-      const durationSec = route?.duration;
-
-      if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSec)) {
-        this.logger.warn('OSRM returned an unparseable response');
-        return null;
-      }
-
-      return {
-        distanceKm: distanceMeters / 1000,
-        durationMin: durationSec / 60,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`OSRM call failed: ${message}`);
-      return null;
+  // Three-layer fallback, cheapest/free first: the maps platform (self-hosted OSRM, tuned by
+  // speeds learned from real trips; if MAPS_PLATFORM_URL is configured) -> Google Routes API
+  // (if GOOGLE_ROUTES_API_KEY is configured) -> straight-line estimate in the caller. Each
+  // layer never throws -- a routing outage never blocks a passenger from booking a trip, it
+  // just prices a bit less precisely. `points` is the whole route in visiting order: pickup,
+  // any stops, destination.
+  private async computeRoadRoute(points: LatLng[]): Promise<RoadRoute | null> {
+    if (this.maps.enabled) {
+      const route = await this.maps.route(points);
+      if (route) return route;
+      this.logger.warn(
+        'Maps platform route failed, falling back to Google Routes API',
+      );
     }
+    return this.computeGoogleRoute(points);
   }
 
   // Real road distance/duration via Google's Routes API. Returns null (never
@@ -132,29 +120,34 @@ export class PricingService {
   // Routes API is and is still far closer to reality than a straight line --
   // a boda can thread some routes a car can't, so this may run slightly long
   // rather than short, which errs in the passenger's favor, not the platform's.
+  //
+  // avoidTolls: true -- without it, DRIVE mode happily routes over toll
+  // expressways (e.g. Kampala-Entebbe) that bodas are legally barred from and
+  // that most riders/drivers here wouldn't pay to use anyway, so the "closer
+  // to reality than a straight line" premise above only holds with this set.
   private async computeGoogleRoute(
-    pickup: LatLng,
-    destination: LatLng,
+    points: LatLng[],
   ): Promise<RoadRoute | null> {
     const apiKey = this.config.get<string>('GOOGLE_ROUTES_API_KEY');
     if (!apiKey) return null;
+
+    const waypoint = (p: LatLng) => ({
+      location: { latLng: { latitude: p.lat, longitude: p.lng } },
+    });
+    const intermediates = points.slice(1, -1);
 
     try {
       const res = await axios.post(
         'https://routes.googleapis.com/directions/v2:computeRoutes',
         {
-          origin: {
-            location: {
-              latLng: { latitude: pickup.lat, longitude: pickup.lng },
-            },
-          },
-          destination: {
-            location: {
-              latLng: { latitude: destination.lat, longitude: destination.lng },
-            },
-          },
+          origin: waypoint(points[0]),
+          destination: waypoint(points[points.length - 1]),
+          ...(intermediates.length
+            ? { intermediates: intermediates.map(waypoint) }
+            : {}),
           travelMode: 'DRIVE',
           units: 'METRIC',
+          routeModifiers: { avoidTolls: true },
         },
         {
           headers: {
@@ -192,18 +185,49 @@ export class PricingService {
     }
   }
 
-  async estimateFare(rideType: RideType, pickup: LatLng, destination: LatLng) {
-    const straightLineKm = this.haversineDistanceKm(pickup, destination);
-
-    const [road, existingRule] = await Promise.all([
-      this.computeRoadRoute(pickup, destination),
-      this.prisma.pricingRule.findUnique({ where: { rideType } }),
-    ]);
-    const rule =
-      existingRule ??
+  private async rideRule(rideType: RideType) {
+    const existing = await this.prisma.pricingRule.findUnique({
+      where: { rideType },
+    });
+    return (
+      existing ??
       (await this.prisma.pricingRule.create({
         data: { rideType, ...this.defaultRuleFor(rideType) },
-      }));
+      }))
+    );
+  }
+
+  private async deliveryRule(sizeTierId: string) {
+    const existing = await this.prisma.deliverySizeTierPricingRule.findUnique({
+      where: { sizeTierId },
+    });
+    return (
+      existing ??
+      (await this.prisma.deliverySizeTierPricingRule.create({
+        data: {
+          sizeTierId,
+          baseFare: 1500,
+          perKm: 500,
+          perMinute: 50,
+          currency: 'UGX',
+        },
+      }))
+    );
+  }
+
+  async estimateFare(
+    rideType: RideType,
+    pickup: LatLng,
+    destination: LatLng,
+    stops: LatLng[] = [],
+  ) {
+    const points = [pickup, ...stops, destination];
+    const straightLineKm = this.straightLineKm(points);
+
+    const [road, rule] = await Promise.all([
+      this.computeRoadRoute(points),
+      this.rideRule(rideType),
+    ]);
 
     const distanceKm =
       road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
@@ -243,27 +267,16 @@ export class PricingService {
     surcharges: { isFragile: boolean; isLiquid: boolean },
     pickup: LatLng,
     destination: LatLng,
+    stops: LatLng[] = [],
   ) {
-    const straightLineKm = this.haversineDistanceKm(pickup, destination);
+    const points = [pickup, ...stops, destination];
+    const straightLineKm = this.straightLineKm(points);
 
-    const [road, existingRule, surchargeRules] = await Promise.all([
-      this.computeRoadRoute(pickup, destination),
-      this.prisma.deliverySizeTierPricingRule.findUnique({
-        where: { sizeTierId },
-      }),
+    const [road, rule, surchargeRules] = await Promise.all([
+      this.computeRoadRoute(points),
+      this.deliveryRule(sizeTierId),
       this.prisma.deliverySurchargeRule.findMany({ where: { isActive: true } }),
     ]);
-    const rule =
-      existingRule ??
-      (await this.prisma.deliverySizeTierPricingRule.create({
-        data: {
-          sizeTierId,
-          baseFare: 1500,
-          perKm: 500,
-          perMinute: 50,
-          currency: 'UGX',
-        },
-      }));
 
     const distanceKm =
       road?.distanceKm ?? straightLineKm * ROAD_DISTANCE_FALLBACK_FACTOR;
@@ -288,6 +301,20 @@ export class PricingService {
       fare: roundToNearest(baseFare + surchargeTotal, FARE_ROUNDING_UNIT),
       currency: rule.currency,
     };
+  }
+
+  async tripWaitingFee(rideType: RideType, stops: StopVisit[]) {
+    const minutes = billableWaitMinutes(stops);
+    if (minutes === 0) return 0;
+    const rule = await this.rideRule(rideType);
+    return roundToNearest(minutes * rule.perMinute, FARE_ROUNDING_UNIT);
+  }
+
+  async deliveryWaitingFee(sizeTierId: string | null, stops: StopVisit[]) {
+    const minutes = billableWaitMinutes(stops);
+    if (minutes === 0 || !sizeTierId) return 0;
+    const rule = await this.deliveryRule(sizeTierId);
+    return roundToNearest(minutes * rule.perMinute, FARE_ROUNDING_UNIT);
   }
 
   // Shared by TripsService and DeliveriesService — pure geo-matching, no money involved, so

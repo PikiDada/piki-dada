@@ -14,7 +14,7 @@ for each decision is in the approved migration plan; this is the condensed check
    plugin on modern Ubuntu).
 3. **Clone the repo onto the server** (e.g. to `/opt/pikidada`), then:
    ```sh
-   cp .env.example .env                     # fill in POSTGRES_*, MINIO_*, NEXT_PUBLIC_*
+   cp .env.example .env                     # fill in POSTGRES_*, MINIO_*, MAPS_PLATFORM_TOKEN, NEXT_PUBLIC_*
    cp apps/api/.env.example apps/api/.env    # fill in every secret/key it lists
    ```
 4. **Email is Amazon SES, not self-hosted** — do this independently of the server/DNS steps
@@ -23,10 +23,14 @@ for each decision is in the approved migration plan; this is the condensed check
    just assume), request production access, create SMTP credentials, fill in `SMTP_*` in
    `apps/api/.env`. See that file's comments for the full rundown.
 5. **OSRM (self-hosted routing, optional but recommended)**: run the one-time data-prep
-   commands in `docker-compose.yml`'s comment on the `osrm` service, then set `OSRM_URL` in
-   `apps/api/.env`. Not required for Phase 1/2 below — the app falls back to Google Routes
-   (or a straight-line estimate) automatically if this isn't set up yet, so it's fine to do
-   this after cutover once the site is already stable.
+   commands in `docker-compose.yml`'s comment on the `osrm` service. Nothing else to set:
+   the maps service talks to it, and the API talks to the maps service. Not required for
+   Phase 1/2 below — pricing falls back to Google Routes (or a straight-line estimate)
+   automatically until it's up, so it's fine to do this after cutover once the site is stable.
+6. **Maps platform** (`services/maps`, Go): needs only `MAPS_PLATFORM_TOKEN` in the root
+   `.env` (any long random string: `openssl rand -hex 32`). It creates its own `maps`
+   database on first start and starts learning from the first trip. See
+   `services/maps/README.md` for how it works.
 
 ## Phase 1 — Dry run (still no impact on the live site)
 
@@ -36,7 +40,8 @@ for each decision is in the approved migration plan; this is the condensed check
    ```sh
    pg_dump "$SUPABASE_DATABASE_URL" | docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"
    ```
-3. `docker compose up -d --build` (build and start `api`, `web`, `caddy` too).
+3. `docker compose up -d --build` (build and start `api`, `maps` and `caddy` too; the website
+   is built into the Caddy image as static files, so there's no separate web container).
 4. `docker compose exec api npx prisma migrate deploy` if migrations haven't run yet.
 5. Smoke test for real: register a fresh account, confirm the verification email actually
    arrives (check spam), log in, take a test trip end-to-end, log into `/admin`.
@@ -70,5 +75,14 @@ Pick a low-traffic time (late night, Kampala time).
 - Add `deploy/pg-backup.sh` to root's crontab (see the comment at the top of that file for
   the exact line) — self-hosted Postgres has no automatic backups the way Supabase did.
 - `docker compose logs -f` / `docker compose ps` are your new Render dashboard.
+- **Memory**: each service has a `mem_limit` in `docker-compose.yml`, sized for a 4 GB
+  server (about 2.9 GB in total). After a week of real traffic, check actual usage with
+  `docker stats --no-stream` and adjust; OSRM's figure is the least certain until measured.
+  If everything sits well under its limit, a smaller server may be enough.
+- **Is the maps platform learning?**
+  `docker compose exec api node -e "fetch('http://maps:8080/v1/stats',{headers:{Authorization:'Bearer '+process.env.MAPS_PLATFORM_TOKEN}}).then(r=>r.json()).then(console.log)"`
+  shows journeys learned, road segments with observed speeds, and how many of those OSRM
+  now routes with. The OSRM container applies newly learned speeds every night at 03:00
+  Kampala time (`docker compose logs osrm`).
 - `ufw allow 80,443,22/tcp && ufw enable` (or equivalent) so nothing but SSH and the reverse
   proxy is reachable from the internet.

@@ -15,12 +15,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 RUN pnpm --filter web build
 
-FROM base AS runtime
-ENV NODE_ENV=production
-WORKDIR /app
-COPY --from=build /app/apps/web/public ./apps/web/public
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-
-EXPOSE 3000
-CMD ["node", "apps/web/server.js"]
+# Every page renders in the browser, so the build is plain files (next.config's
+# output: "export") and Caddy serves them directly: no Node process for the website.
+FROM caddy:2-alpine
+COPY --from=build /app/apps/web/out /srv

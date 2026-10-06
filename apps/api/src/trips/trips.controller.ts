@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -16,6 +17,7 @@ import { TripsService } from './trips.service';
 import { RequestTripDto } from './dto/request-trip.dto';
 import { UpdateTripStatusDto } from './dto/update-trip-status.dto';
 import { RateTripDto } from './dto/rate-trip.dto';
+import { ReplaceStopsDto } from './dto/stop-input.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('trips')
@@ -47,6 +49,48 @@ export class TripsController {
     @Body() dto: UpdateTripStatusDto,
   ) {
     return this.tripsService.updateStatus(user.id, id, dto);
+  }
+
+  // Returns what the fare would become, without changing anything, so the passenger can
+  // confirm before a mid-trip edit takes effect.
+  @Roles(UserRole.PASSENGER)
+  @Post(':id/stops/preview')
+  previewStops(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: ReplaceStopsDto,
+  ) {
+    return this.tripsService.previewStops(user.id, id, dto);
+  }
+
+  @Roles(UserRole.PASSENGER)
+  @Put(':id/stops')
+  replaceStops(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: ReplaceStopsDto,
+  ) {
+    return this.tripsService.replaceStops(user.id, id, dto);
+  }
+
+  @Roles(UserRole.DRIVER)
+  @Patch(':id/stops/:stopId/arrive')
+  arriveAtStop(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Param('stopId') stopId: string,
+  ) {
+    return this.tripsService.arriveAtStop(user.id, id, stopId);
+  }
+
+  @Roles(UserRole.DRIVER)
+  @Patch(':id/stops/:stopId/depart')
+  departStop(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Param('stopId') stopId: string,
+  ) {
+    return this.tripsService.departStop(user.id, id, stopId);
   }
 
   @Post(':id/rate')

@@ -9,8 +9,16 @@ import { TripMap } from "@/components/maps/trip-map";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
-import type { LatLng, RideType, Trip } from "@/lib/types";
+import {
+  FREE_WAIT_MINUTES_PER_STOP,
+  MAX_STOPS,
+  type LatLng,
+  type RideType,
+  type Trip,
+} from "@/lib/types";
+import { stopsPayload, stopsReady, type StopDraft } from "@/lib/stops";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
+import { StopListEditor } from "@/components/trip/stop-list-editor";
 
 export default function PassengerBookingPage() {
   const router = useRouter();
@@ -18,12 +26,14 @@ export default function PassengerBookingPage() {
   const [pickup, setPickup] = useState<LatLng | undefined>();
   const [destinationAddress, setDestinationAddress] = useState("");
   const [destination, setDestination] = useState<LatLng | undefined>();
+  const [stops, setStops] = useState<StopDraft[]>([]);
   const rideType: RideType = "BODA";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
 
-  const canRequest = pickup && destination && pickupAddress && destinationAddress;
+  const canRequest =
+    pickup && destination && pickupAddress && destinationAddress && stopsReady(stops, false);
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -59,11 +69,12 @@ export default function PassengerBookingPage() {
           destinationLat: destination.lat,
           destinationLng: destination.lng,
           destinationAddress,
+          stops: stopsPayload(stops, false),
           rideType,
           paymentMethod: "CASH",
         }),
       });
-      router.push(`/passenger/trip/${trip.id}`);
+      router.push(`/passenger/trip?id=${trip.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not request ride");
     } finally {
@@ -76,7 +87,12 @@ export default function PassengerBookingPage() {
       {/* Full-bleed map with the sheet riding over it: the map reads as the
           surface of the app rather than a widget parked inside a padded box. */}
       <div className="relative">
-        <TripMap pickup={pickup} destination={destination} height="300px" />
+        <TripMap
+          pickup={pickup}
+          destination={destination}
+          stops={stops.flatMap((s) => (s.location ? [s.location] : []))}
+          height="300px"
+        />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-neutral-50 to-transparent" />
       </div>
 
@@ -125,6 +141,13 @@ export default function PassengerBookingPage() {
             <Crosshair className="h-3.5 w-3.5" aria-hidden />
             {locating ? "Getting your location..." : "Use my current location"}
           </button>
+          <StopListEditor stops={stops} onChange={setStops} max={MAX_STOPS} />
+          {stops.length > 0 && (
+            <p className="text-xs text-neutral-500">
+              Waiting at each stop is free for {FREE_WAIT_MINUTES_PER_STOP} minutes, then charged
+              per minute.
+            </p>
+          )}
           <PlaceInput
             placeholder="Destination"
             value={destinationAddress}

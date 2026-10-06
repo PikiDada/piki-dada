@@ -24,11 +24,32 @@ export interface Vehicle {
   photoUrl?: string | null;
 }
 
+// Mirrors the API's limits -- see MAX_STOPS / FREE_WAIT_MINUTES_PER_STOP in pricing.service.ts.
+export const MAX_STOPS = 3;
+export const FREE_WAIT_MINUTES_PER_STOP = 3;
+
+export interface TripStop {
+  id: string;
+  sequence: number;
+  address: string;
+  lat: number;
+  lng: number;
+  arrivedAt?: string | null;
+  departedAt?: string | null;
+}
+
+export interface DeliveryStop extends TripStop {
+  contactName: string;
+  contactPhone: string;
+}
+
 export interface Trip {
   id: string;
   status: TripStatus;
   rideType: RideType;
   fare: number;
+  waitingFee?: number;
+  stops?: TripStop[];
   currency: string;
   pickupAddress: string;
   pickupLat: number;
@@ -150,6 +171,8 @@ export interface Delivery {
   isLiquid: boolean;
   cashOnDeliveryAmount?: number | null;
   fare: number;
+  waitingFee?: number;
+  stops?: DeliveryStop[];
   currency: string;
   paymentMethod: PaymentMethod;
   senderId: string;

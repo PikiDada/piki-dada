@@ -216,6 +216,17 @@ model Trip {
   destinationLng     Float
   distanceKm         Float?
   durationMin        Float?
+  // Ground truth, computed from locationPings once the trip reaches COMPLETED -- distanceKm/
+  // durationMin above are the pre-trip ESTIMATE used for pricing, these are what actually
+  // happened. Null until completion, and also null if too few pings were recorded to measure
+  // (e.g. the driver app was backgrounded). The gap between estimate and actual is what lets
+  // pricing self-calibrate over time instead of relying on a fixed fallback factor forever.
+  actualDistanceKm   Float?
+  actualDurationMin  Float?
+  // Charged for time the driver waits at stops beyond the free allowance, and already folded
+  // into `fare` once the trip completes -- kept separately so the passenger can see why the
+  // final fare is higher than the quote. Payments read `fare`, never this.
+  waitingFee         Float         @default(0)
   fare               Float?
   currency           String        @default("UGX")
   couponCode         String?
@@ -235,10 +246,46 @@ model Trip {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
-  payment Payment?
-  ratings Rating[]
+  payment       Payment?
+  ratings       Rating[]
+  locationPings TripLocationPing[]
+  stops         TripStop[]
 
   @@index([cancelledByUserId, cancelledAt])
+}
+
+// Intermediate stops between pickup and destination, visited in `sequence` order. A stop the
+// driver has already arrived at is locked: mid-trip edits only replace stops not yet reached.
+model TripStop {
+  id         String    @id @default(cuid())
+  tripId     String
+  trip       Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  sequence   Int
+  address    String
+  lat        Float
+  lng        Float
+  arrivedAt  DateTime?
+  departedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([tripId, sequence])
+}
+
+// Raw GPS trace recorded only while a trip is IN_PROGRESS -- not during the driver's approach
+// to pickup, which isn't part of what the passenger is billed for. This is the ground-truth
+// trajectory behind Trip.actualDistanceKm/actualDurationMin, and is kept even after those are
+// computed: a future map-matching step (snapping pings to actual OSM road segments to learn
+// real travel speeds per road, rather than just a straight-line sum between pings) needs the
+// raw points, not just the derived totals. Never exposed directly via the API.
+model TripLocationPing {
+  id         String   @id @default(cuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  lat        Float
+  lng        Float
+  recordedAt DateTime @default(now())
+
+  @@index([tripId, recordedAt])
 }
 
 model Payment {
@@ -288,6 +335,8 @@ model Delivery {
   cashOnDeliveryAmount Float?
   distanceKm           Float?
   durationMin          Float?
+  // Same as Trip.waitingFee -- see its comment.
+  waitingFee           Float             @default(0)
   fare                 Float?
   currency             String            @default("UGX")
   paymentMethod        PaymentMethod
@@ -304,8 +353,28 @@ model Delivery {
   updatedAt            DateTime          @updatedAt
 
   payment DeliveryPayment?
+  stops   DeliveryStop[]
 
   @@index([cancelledByUserId, cancelledAt])
+}
+
+// Extra drop-offs visited, in `sequence` order, after pickup and before the final drop-off
+// stored on Delivery itself. Each has its own recipient. Same locking rule as TripStop.
+model DeliveryStop {
+  id           String    @id @default(cuid())
+  deliveryId   String
+  delivery     Delivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  sequence     Int
+  address      String
+  lat          Float
+  lng          Float
+  contactName  String
+  contactPhone String
+  arrivedAt    DateTime?
+  departedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([deliveryId, sequence])
 }
 
 model DeliveryPayment {

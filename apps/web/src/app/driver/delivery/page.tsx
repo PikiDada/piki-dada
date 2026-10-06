@@ -1,14 +1,22 @@
 "use client";
 
+import { IdFromQuery } from "@/components/routing/id-from-query";
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { TripMap } from "@/components/maps/trip-map";
 import { CancelTripDialog } from "@/components/trip/cancel-trip-dialog";
+import { RouteStops } from "@/components/trip/route-stops";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { SOCKET_EVENTS, type Delivery, type DeliveryStatus } from "@/lib/types";
+import { stopLocations, stopProgress } from "@/lib/stops";
+import {
+  FREE_WAIT_MINUTES_PER_STOP,
+  SOCKET_EVENTS,
+  type Delivery,
+  type DeliveryStatus,
+} from "@/lib/types";
 
 const NEXT_STATUS: Record<string, { next: DeliveryStatus; label: string } | undefined> = {
   ACCEPTED: { next: "ARRIVED_PICKUP", label: "I've arrived at pickup" },
@@ -23,12 +31,12 @@ const CANCELLABLE_STATUSES = ["ACCEPTED", "ARRIVED_PICKUP"];
 // collected, both switch to the drop-off side.
 const PICKUP_PHASE_STATUSES = ["ACCEPTED", "ARRIVED_PICKUP"];
 
-export default function DriverDeliveryPage() {
-  const { id } = useParams<{ id: string }>();
+function DriverDeliveryView({ id }: { id: string }) {
   const router = useRouter();
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [updating, setUpdating] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<Delivery>(`/deliveries/${id}`).then(setDelivery);
@@ -63,6 +71,7 @@ export default function DriverDeliveryPage() {
     const step = NEXT_STATUS[delivery.status];
     if (!step) return;
     setUpdating(true);
+    setError(null);
     try {
       const updated = await apiFetch<Delivery>(`/deliveries/${id}/status`, {
         method: "PATCH",
@@ -72,6 +81,24 @@ export default function DriverDeliveryPage() {
       if (step.next === "DELIVERED") {
         setTimeout(() => router.push("/driver"), 1500);
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the delivery");
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function stopAction(stopId: string, action: "arrive" | "depart") {
+    setUpdating(true);
+    setError(null);
+    try {
+      const updated = await apiFetch<Delivery>(
+        `/deliveries/${id}/stops/${stopId}/${action}`,
+        { method: "PATCH" },
+      );
+      setDelivery(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the drop-off");
     } finally {
       setUpdating(false);
     }
@@ -91,11 +118,24 @@ export default function DriverDeliveryPage() {
 
   const step = NEXT_STATUS[delivery.status];
   const inPickupPhase = PICKUP_PHASE_STATUSES.includes(delivery.status);
-  const targetLat = inPickupPhase ? delivery.pickupLat : delivery.destinationLat;
-  const targetLng = inPickupPhase ? delivery.pickupLng : delivery.destinationLng;
-  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLng}`;
-  const contactName = inPickupPhase ? delivery.pickupContactName : delivery.dropoffContactName;
-  const contactPhone = inPickupPhase ? delivery.pickupContactPhone : delivery.dropoffContactPhone;
+  const pickedUp = delivery.status === "PICKED_UP";
+  const { current: currentStop, next: nextStop } = stopProgress(delivery.stops);
+  // While carrying the item, the rider deals with whichever extra drop-off is in play before
+  // the final one.
+  const activeStop = pickedUp ? (currentStop ?? nextStop) : undefined;
+  const stopNumber = (stopId: string) =>
+    (delivery.stops ?? []).findIndex((s) => s.id === stopId) + 1;
+
+  const target = inPickupPhase
+    ? { lat: delivery.pickupLat, lng: delivery.pickupLng }
+    : (activeStop ?? { lat: delivery.destinationLat, lng: delivery.destinationLng });
+  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${target.lat},${target.lng}`;
+  const contactName = inPickupPhase
+    ? delivery.pickupContactName
+    : (activeStop?.contactName ?? delivery.dropoffContactName);
+  const contactPhone = inPickupPhase
+    ? delivery.pickupContactPhone
+    : (activeStop?.contactPhone ?? delivery.dropoffContactPhone);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -103,15 +143,19 @@ export default function DriverDeliveryPage() {
         <TripMap
           pickup={{ lat: delivery.pickupLat, lng: delivery.pickupLng }}
           destination={{ lat: delivery.destinationLat, lng: delivery.destinationLng }}
+          stops={stopLocations(delivery.stops)}
           height="280px"
         />
       </div>
 
       <Card className="mx-4">
         <CardContent className="space-y-3 pt-6">
-          <p className="text-sm text-neutral-600">
-            {delivery.pickupAddress} → {delivery.destinationAddress}
-          </p>
+          <RouteStops
+            pickupAddress={delivery.pickupAddress}
+            destinationAddress={delivery.destinationAddress}
+            stops={delivery.stops}
+            noun="Drop-off"
+          />
           <div className="rounded-xl bg-neutral-50 p-3 text-sm">
             <p className="font-medium">{delivery.itemDescription}</p>
             {delivery.sizeTier && <p className="text-neutral-600">{delivery.sizeTier.name}</p>}
@@ -127,10 +171,20 @@ export default function DriverDeliveryPage() {
           <p className="text-2xl font-bold">
             {delivery.fare?.toLocaleString()} {delivery.currency}
           </p>
+          {!!delivery.waitingFee && (
+            <p className="text-sm text-neutral-600">
+              Includes {delivery.waitingFee.toLocaleString()} {delivery.currency} for waiting at
+              drop-offs
+            </p>
+          )}
 
           <div className="rounded-xl bg-neutral-50 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-              {inPickupPhase ? "Pickup contact" : "Drop-off contact"}
+              {inPickupPhase
+                ? "Pickup contact"
+                : activeStop
+                  ? `Drop-off ${stopNumber(activeStop.id)} contact`
+                  : "Final drop-off contact"}
             </p>
             <p className="font-medium">{contactName}</p>
             <a href={`tel:${contactPhone}`} className="mt-1 inline-block">
@@ -146,11 +200,50 @@ export default function DriverDeliveryPage() {
             </Button>
           </a>
 
-          {step && (
-            <Button className="w-full" disabled={updating} onClick={advanceStatus}>
-              {updating ? "Updating..." : step.label}
+          {pickedUp && currentStop && (
+            <>
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                At drop-off {stopNumber(currentStop.id)} since{" "}
+                {new Date(currentStop.arrivedAt!).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+                . The first {FREE_WAIT_MINUTES_PER_STOP} minutes are free; after that the sender
+                pays per minute.
+              </p>
+              <Button
+                className="w-full"
+                disabled={updating}
+                onClick={() => stopAction(currentStop.id, "depart")}
+              >
+                {updating ? "Updating..." : `Handed over at drop-off ${stopNumber(currentStop.id)}`}
+              </Button>
+            </>
+          )}
+
+          {pickedUp && !currentStop && nextStop && (
+            <Button
+              className="w-full"
+              disabled={updating}
+              onClick={() => stopAction(nextStop.id, "arrive")}
+            >
+              {updating ? "Updating..." : `Arrived at drop-off ${stopNumber(nextStop.id)}`}
             </Button>
           )}
+
+          {/* Every extra drop-off must be handed over before the final one (the API enforces
+              this too), so the normal status button only appears once none remain. */}
+          {step && !activeStop && (
+            <Button className="w-full" disabled={updating} onClick={advanceStatus}>
+              {updating
+                ? "Updating..."
+                : pickedUp && delivery.stops?.length
+                  ? "I've arrived at the final drop-off"
+                  : step.label}
+            </Button>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           {CANCELLABLE_STATUSES.includes(delivery.status) && (
             <Button
@@ -184,4 +277,8 @@ export default function DriverDeliveryPage() {
       )}
     </div>
   );
+}
+
+export default function DriverDeliveryPage() {
+  return <IdFromQuery>{(id) => <DriverDeliveryView id={id} />}</IdFromQuery>;
 }

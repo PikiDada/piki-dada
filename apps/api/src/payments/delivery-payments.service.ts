@@ -47,8 +47,8 @@ export class DeliveryPaymentsService {
       kind: 'delivery',
       amount: delivery.payment!.amount,
       currency: delivery.payment!.currency,
-      successUrl: `${webUrl}/passenger/delivery/${deliveryId}?paid=1`,
-      cancelUrl: `${webUrl}/passenger/delivery/${deliveryId}`,
+      successUrl: `${webUrl}/passenger/delivery?id=${deliveryId}&paid=1`,
+      cancelUrl: `${webUrl}/passenger/delivery?id=${deliveryId}`,
     });
     return { url };
   }
@@ -62,7 +62,7 @@ export class DeliveryPaymentsService {
       amount: delivery.payment!.amount,
       currency: delivery.payment!.currency,
       customerEmail: delivery.sender.email,
-      redirectUrl: `${webUrl}/passenger/delivery/${deliveryId}?paid=1`,
+      redirectUrl: `${webUrl}/passenger/delivery?id=${deliveryId}&paid=1`,
     });
     return { url };
   }

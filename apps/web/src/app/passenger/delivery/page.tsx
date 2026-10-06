@@ -1,16 +1,21 @@
 "use client";
 
+import { IdFromQuery } from "@/components/routing/id-from-query";
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { TripMap } from "@/components/maps/trip-map";
 import { CancelTripDialog } from "@/components/trip/cancel-trip-dialog";
+import { EditStopsPanel } from "@/components/trip/edit-stops-panel";
+import { RouteStops } from "@/components/trip/route-stops";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { SOCKET_EVENTS, type Delivery, type LatLng } from "@/lib/types";
+import { stopLocations, stopProgress } from "@/lib/stops";
+import { MAX_STOPS, SOCKET_EVENTS, type Delivery, type LatLng } from "@/lib/types";
 
 const CANCELLABLE_STATUSES = ["SEARCHING", "ACCEPTED", "ARRIVED_PICKUP"];
+const STOP_EDITABLE_STATUSES = ["SEARCHING", "ACCEPTED", "ARRIVED_PICKUP", "PICKED_UP"];
 
 const STATUS_LABEL: Record<string, string> = {
   SEARCHING: "Looking for a rider nearby...",
@@ -22,12 +27,12 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: "Delivery cancelled",
 };
 
-export default function PassengerDeliveryPage() {
-  const { id } = useParams<{ id: string }>();
+function PassengerDeliveryView({ id }: { id: string }) {
   const router = useRouter();
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [riderLocation, setRiderLocation] = useState<LatLng | undefined>();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [editingStops, setEditingStops] = useState(false);
 
   useEffect(() => {
     apiFetch<Delivery>(`/deliveries/${id}`).then(setDelivery);
@@ -86,6 +91,7 @@ export default function PassengerDeliveryPage() {
         <TripMap
           pickup={{ lat: delivery.pickupLat, lng: delivery.pickupLng }}
           destination={{ lat: delivery.destinationLat, lng: delivery.destinationLng }}
+          stops={stopLocations(delivery.stops)}
           driverLocation={
             riderLocation ??
             (delivery.rider?.currentLat
@@ -102,9 +108,12 @@ export default function PassengerDeliveryPage() {
           {delivery.status === "CANCELLED" && delivery.cancellationReason && (
             <p className="text-sm text-red-600">Reason: {delivery.cancellationReason}</p>
           )}
-          <p className="text-sm text-neutral-600">
-            {delivery.pickupAddress} → {delivery.destinationAddress}
-          </p>
+          <RouteStops
+            pickupAddress={delivery.pickupAddress}
+            destinationAddress={delivery.destinationAddress}
+            stops={delivery.stops}
+            noun="Drop-off"
+          />
           <div className="rounded-xl bg-neutral-50 p-3 text-sm">
             <p className="font-medium">{delivery.itemDescription}</p>
             {delivery.sizeTier && <p className="text-neutral-600">{delivery.sizeTier.name}</p>}
@@ -120,6 +129,33 @@ export default function PassengerDeliveryPage() {
           <p className="text-2xl font-bold">
             {delivery.fare?.toLocaleString()} {delivery.currency}
           </p>
+          {!!delivery.waitingFee && (
+            <p className="text-sm text-neutral-600">
+              Includes {delivery.waitingFee.toLocaleString()} {delivery.currency} for waiting at
+              drop-offs
+            </p>
+          )}
+
+          {STOP_EDITABLE_STATUSES.includes(delivery.status) &&
+            stopProgress(delivery.stops).locked.length < MAX_STOPS &&
+            (editingStops ? (
+              <EditStopsPanel<Delivery>
+                basePath={`/deliveries/${id}`}
+                stops={delivery.stops ?? []}
+                currency={delivery.currency}
+                withContact
+                noun="drop-off"
+                onSaved={(updated) => {
+                  setDelivery(updated);
+                  setEditingStops(false);
+                }}
+                onClose={() => setEditingStops(false)}
+              />
+            ) : (
+              <Button variant="outline" className="w-full" onClick={() => setEditingStops(true)}>
+                {delivery.stops?.length ? "Change drop-offs" : "Add a drop-off"}
+              </Button>
+            ))}
 
           {delivery.rider && (
             <div className="rounded-xl bg-neutral-50 p-3 text-sm">
@@ -193,4 +229,8 @@ export default function PassengerDeliveryPage() {
       )}
     </div>
   );
+}
+
+export default function PassengerDeliveryPage() {
+  return <IdFromQuery>{(id) => <PassengerDeliveryView id={id} />}</IdFromQuery>;
 }

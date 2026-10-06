@@ -41,8 +41,8 @@ export class PaymentsService {
       kind: 'trip',
       amount: trip.payment!.amount,
       currency: trip.payment!.currency,
-      successUrl: `${webUrl}/passenger/trip/${tripId}?paid=1`,
-      cancelUrl: `${webUrl}/passenger/trip/${tripId}`,
+      successUrl: `${webUrl}/passenger/trip?id=${tripId}&paid=1`,
+      cancelUrl: `${webUrl}/passenger/trip?id=${tripId}`,
     });
     return { url };
   }
@@ -56,7 +56,7 @@ export class PaymentsService {
       amount: trip.payment!.amount,
       currency: trip.payment!.currency,
       customerEmail: trip.passenger.email,
-      redirectUrl: `${webUrl}/passenger/trip/${tripId}?paid=1`,
+      redirectUrl: `${webUrl}/passenger/trip?id=${tripId}&paid=1`,
     });
     return { url };
   }

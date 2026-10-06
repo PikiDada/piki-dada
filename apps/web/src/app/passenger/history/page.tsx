@@ -20,7 +20,7 @@ export default function PassengerHistoryPage() {
       <div className="space-y-3">
         {trips.length === 0 && <p className="text-sm text-neutral-600">No rides yet.</p>}
         {trips.map((trip) => (
-          <Link key={trip.id} href={`/passenger/trip/${trip.id}`}>
+          <Link key={trip.id} href={`/passenger/trip?id=${trip.id}`}>
             <Card>
               <CardContent className="flex items-center justify-between pt-4">
                 <div>

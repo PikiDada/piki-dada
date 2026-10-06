@@ -23,14 +23,8 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       accessToken: null,
       user: null,
-      setSession: (accessToken, user) => {
-        document.cookie = `role=${user.role}; path=/; max-age=604800`;
-        set({ accessToken, user });
-      },
-      clearSession: () => {
-        document.cookie = "role=; path=/; max-age=0";
-        set({ accessToken: null, user: null });
-      },
+      setSession: (accessToken, user) => set({ accessToken, user }),
+      clearSession: () => set({ accessToken: null, user: null }),
     }),
     { name: "piki-dada-auth" },
   ),

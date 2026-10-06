@@ -8,6 +8,7 @@ import {
   ParseFilePipe,
   Patch,
   Post,
+  Put,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -21,6 +22,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { DeliveriesService } from './deliveries.service';
 import { RequestDeliveryDto } from './dto/request-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { ReplaceDeliveryStopsDto } from './dto/delivery-stop-input.dto';
 import { UploadsService } from '../uploads/uploads.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -97,6 +99,46 @@ export class DeliveriesController {
     @Body() dto: UpdateDeliveryStatusDto,
   ) {
     return this.deliveriesService.updateStatus(user.id, id, dto);
+  }
+
+  @Roles(UserRole.PASSENGER)
+  @Post(':id/stops/preview')
+  previewStops(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: ReplaceDeliveryStopsDto,
+  ) {
+    return this.deliveriesService.previewStops(user.id, id, dto);
+  }
+
+  @Roles(UserRole.PASSENGER)
+  @Put(':id/stops')
+  replaceStops(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: ReplaceDeliveryStopsDto,
+  ) {
+    return this.deliveriesService.replaceStops(user.id, id, dto);
+  }
+
+  @Roles(UserRole.DRIVER)
+  @Patch(':id/stops/:stopId/arrive')
+  arriveAtStop(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Param('stopId') stopId: string,
+  ) {
+    return this.deliveriesService.arriveAtStop(user.id, id, stopId);
+  }
+
+  @Roles(UserRole.DRIVER)
+  @Patch(':id/stops/:stopId/depart')
+  departStop(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Param('stopId') stopId: string,
+  ) {
+    return this.deliveriesService.departStop(user.id, id, stopId);
   }
 
   // Must come before ':id' below, or 'me' would be parsed as an id.

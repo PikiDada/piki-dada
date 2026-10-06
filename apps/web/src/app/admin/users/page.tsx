@@ -199,7 +199,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={`/admin/users/${u.id}`}>View details</Link>
+                  <Link href={`/admin/users/detail?id=${u.id}`}>View details</Link>
                 </Button>
                 {u.role !== "ADMIN" && (
                   <Button

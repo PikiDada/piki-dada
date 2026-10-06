@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { SOCKET_EVENTS } from './socket-events';
 import { PrismaService } from '../prisma/prisma.service';
+import { JourneyTrackingService } from './journey-tracking.service';
 
 @Injectable()
 @WebSocketGateway()
@@ -23,6 +24,7 @@ export class TripsGateway implements OnGatewayConnection {
     private jwtService: JwtService,
     private config: ConfigService,
     private prisma: PrismaService,
+    private tracking: JourneyTrackingService,
   ) {}
 
   handleConnection(client: Socket) {
@@ -77,7 +79,7 @@ export class TripsGateway implements OnGatewayConnection {
   // Widened to accept either a trip or a delivery reference, rather than a second handler --
   // it's the same relay logic and the same event either way, just a different room.
   @SubscribeMessage(SOCKET_EVENTS.DRIVER_LOCATION_UPDATE)
-  relayDriverLocation(
+  async relayDriverLocation(
     @ConnectedSocket() client: Socket,
     @MessageBody()
     data: {
@@ -93,6 +95,12 @@ export class TripsGateway implements OnGatewayConnection {
         ? `delivery:${data.deliveryId}`
         : null;
     if (!room) return;
+    const isAssignedDriver = await this.tracking.recordDriverLocation(
+      client.data.userId,
+      { tripId: data.tripId, deliveryId: data.deliveryId },
+      data.location,
+    );
+    if (!isAssignedDriver) return;
     this.server.to(room).emit(SOCKET_EVENTS.DRIVER_LOCATION_UPDATE, {
       tripId: data.tripId,
       deliveryId: data.deliveryId,
