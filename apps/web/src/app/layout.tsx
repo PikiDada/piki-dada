@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://piki-dada.vercel.app"),
+  metadataBase: new URL("https://www.pikidada.com"),
   title: "Piki Dada",
   description: "Your trusted partner for safe, reliable boda rides and fast deliveries across the city and beyond.",
   manifest: "/manifest.json",

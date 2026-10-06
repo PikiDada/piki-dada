@@ -50,25 +50,39 @@ for each decision is in the approved migration plan; this is the condensed check
 
 Pick a low-traffic time (late night, Kampala time).
 
-1. Take a final `pg_dump` from Supabase and restore it the same way as step 3 above, so the
+1. Take a final `pg_dump` from Supabase and restore it the same way as Phase 1 step 2, so the
    new database has everything up to the moment of cutover.
-2. Re-point DNS:
+2. **Move uploaded files off Supabase** — only after that final restore, since a later
+   restore would bring the old links back. `scripts/migrate-storage.ts` copies every file
+   from Supabase Storage into MinIO, then rewrites the database's file links to
+   `files.pikidada.com`. It only rewrites if every file copied, and is safe to re-run. See
+   the usage block at the top of the script; `DATABASE_URL` there must be the new
+   self-hosted Postgres.
+3. Re-point DNS:
    - `api.pikidada.com` → the Hetzner server's IP (was the Render/Cloudflare CNAME)
    - `pikidada.com` and `www.pikidada.com` → the Hetzner server's IP (was Vercel)
    - `files.pikidada.com` → the Hetzner server's IP (new record, for MinIO document previews)
-3. Wait for DNS to propagate, then confirm Caddy issued certificates for all four hostnames:
+4. Wait for DNS to propagate, then confirm Caddy issued certificates for all four hostnames:
    `docker compose logs caddy | grep -i certificate`
-4. Re-run the same smoke test as Phase 1, against the real domain this time.
+5. Re-run the same smoke test as Phase 1, against the real domain this time, and open a
+   driver document in `/admin` to confirm it now loads from `files.pikidada.com`.
 
 ## Phase 3 — Decommission (after a few stable days)
 
-- Cancel the Render service, remove the Vercel project.
+After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
+
+- Cancel the Render service and remove both Vercel projects (`piki-dada-web` and
+  `piki-dada-api`).
+- Delete the files only those hosts used: `render.yaml`, `apps/web/vercel.json`, and
+  `.github/workflows/keep-alive.yml` (it pings Render to keep it awake).
 - Let the SendGrid trial lapse (no action needed) or delete the account.
-- Remove `.github/workflows/keep-alive.yml` — no longer relevant once off Render.
-- Keep the Supabase project paused (not deleted) for a short rollback window before deleting
-  it for good.
-- Leave Cloudinary as-is — old driver-document links keep resolving from its free tier at no
-  ongoing cost; nothing new writes there after the MinIO switch.
+- Keep the Supabase project paused (not deleted) for a short rollback window, then delete it.
+  Before deleting, confirm no file links still point at it (expect 0):
+  `docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "SELECT count(*) FROM \"Document\" WHERE \"fileUrl\" LIKE '%supabase.co%'"`
+- Close the Cloudinary account: nothing in the database links to it (checked 6 Oct 2026; all
+  documents were on Supabase Storage, which step 2 of the cutover moves to MinIO).
+- Remove `*.supabase.co` and `res.cloudinary.com` from the image sources in the Caddyfile's
+  Content-Security-Policy.
 
 ## Ongoing
 
