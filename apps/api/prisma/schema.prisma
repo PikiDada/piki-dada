@@ -2,9 +2,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Migrations take Postgres advisory locks, which a transaction-mode pooler (Supabase port
+// 6543, PgBouncer) can't hold: `migrate deploy` hangs. DIRECT_URL is a connection that can
+// (Supabase's session pooler on 5432, or the same as DATABASE_URL for a self-hosted server).
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {

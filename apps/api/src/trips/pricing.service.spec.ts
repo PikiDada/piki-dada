@@ -57,7 +57,7 @@ describe('PricingService with stops', () => {
     );
 
     expect(maps.route).toHaveBeenCalledWith([pickup, stop, destination]);
-    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(mockedAxios.post.mock.calls).toHaveLength(0);
     expect(estimate.distanceKm).toBe(12);
     expect(estimate.durationMin).toBe(25);
   });

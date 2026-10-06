@@ -96,7 +96,7 @@ export class TripsGateway implements OnGatewayConnection {
         : null;
     if (!room) return;
     const isAssignedDriver = await this.tracking.recordDriverLocation(
-      client.data.userId,
+      (client.data as { userId: string }).userId,
       { tripId: data.tripId, deliveryId: data.deliveryId },
       data.location,
     );
