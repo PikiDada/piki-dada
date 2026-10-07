@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -59,16 +59,24 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<Category>("ALL");
 
-  function load() {
-    setLoading(true);
-    apiFetch<AdminUser[]>("/admin/users")
-      .then(setUsers)
-      .finally(() => setLoading(false));
-  }
+  // The first load needs no "loading" change: it starts true. Setting state synchronously
+  // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
+  const fetchAll = useCallback(
+    () =>
+      apiFetch<AdminUser[]>("/admin/users")
+        .then(setUsers)
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void fetchAll();
+  }, [fetchAll]);
+
+  function load() {
+    setLoading(true);
+    void fetchAll();
+  }
 
   const counts = useMemo(() => {
     const c: Record<Category, number> = {

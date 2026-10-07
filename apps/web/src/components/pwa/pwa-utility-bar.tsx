@@ -1,18 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePwaInstall } from "@/hooks/use-pwa-install";
-import { isPushSubscribed, isPushSupported } from "@/lib/pwa";
+import { useCanOfferPush } from "@/hooks/use-can-offer-push";
 import { InstallLink } from "./install-link";
 import { PushBell } from "./push-bell";
 
 export function PwaUtilityBar() {
   const { installed } = usePwaInstall();
-  const [showBell, setShowBell] = useState(false);
-
-  useEffect(() => {
-    setShowBell(isPushSupported() && Notification.permission !== "denied" && !isPushSubscribed());
-  }, []);
+  const showBell = useCanOfferPush();
 
   if (installed && !showBell) return null;
 

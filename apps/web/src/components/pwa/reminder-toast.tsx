@@ -15,12 +15,8 @@ export function ReminderToast() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (installed || !promptable) {
-      setVisible(false);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
+    // Nothing to remind about; the previous run's cleanup has already cleared its timers.
+    if (installed || !promptable) return;
 
     const show = () => setVisible((current) => current || true);
     timeoutRef.current = setTimeout(() => {
@@ -34,7 +30,7 @@ export function ReminderToast() {
     };
   }, [installed, promptable]);
 
-  if (!visible || installed) return null;
+  if (!visible || installed || !promptable) return null;
 
   async function handleInstall() {
     if (isIOS) {

@@ -43,13 +43,18 @@ export class DriversController {
 
   @Roles(UserRole.DRIVER)
   @Post('me/vehicle')
-  upsertVehicle(@CurrentUser() user: { id: string }, @Body() dto: CreateVehicleDto) {
+  upsertVehicle(
+    @CurrentUser() user: { id: string },
+    @Body() dto: CreateVehicleDto,
+  ) {
     return this.driversService.upsertVehicle(user.id, dto);
   }
 
   @Roles(UserRole.DRIVER)
   @Post('me/documents')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   async uploadDocument(
     @CurrentUser() user: { id: string },
     @Body() dto: UploadDocumentDto,
@@ -57,25 +62,38 @@ export class DriversController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
-          new FileTypeValidator({ fileType: /^(image\/(jpeg|png|webp)|application\/pdf)$/ }),
+          new FileTypeValidator({
+            fileType: /^(image\/(jpeg|png|webp)|application\/pdf)$/,
+          }),
         ],
       }),
     )
     file: Express.Multer.File,
   ) {
-    const fileUrl = await this.uploadsService.uploadBuffer(file.buffer, 'driver-documents', file.originalname, file.mimetype);
+    const fileUrl = await this.uploadsService.uploadBuffer(
+      file.buffer,
+      'driver-documents',
+      file.originalname,
+      file.mimetype,
+    );
     return this.driversService.addDocument(user.id, dto.type, fileUrl);
   }
 
   @Roles(UserRole.DRIVER)
   @Patch('me/availability')
-  setAvailability(@CurrentUser() user: { id: string }, @Body() dto: UpdateAvailabilityDto) {
+  setAvailability(
+    @CurrentUser() user: { id: string },
+    @Body() dto: UpdateAvailabilityDto,
+  ) {
     return this.driversService.setAvailability(user.id, dto.isOnline);
   }
 
   @Roles(UserRole.DRIVER)
   @Patch('me/location')
-  updateLocation(@CurrentUser() user: { id: string }, @Body() dto: UpdateLocationDto) {
+  updateLocation(
+    @CurrentUser() user: { id: string },
+    @Body() dto: UpdateLocationDto,
+  ) {
     return this.driversService.updateLocation(user.id, dto.lat, dto.lng);
   }
 

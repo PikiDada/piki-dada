@@ -12,7 +12,18 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { SOCKET_EVENTS } from './socket-events';
 import { PrismaService } from '../prisma/prisma.service';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { JourneyTrackingService } from './journey-tracking.service';
+
+// What handleConnection stores on each authenticated socket (socket.io types it as `any`).
+interface SocketUser {
+  userId: string;
+  role: string;
+}
+
+function socketUser(client: Socket): SocketUser {
+  return client.data as SocketUser;
+}
 
 @Injectable()
 @WebSocketGateway()
@@ -32,12 +43,12 @@ export class TripsGateway implements OnGatewayConnection {
       (client.handshake.auth?.token as string) ||
       (client.handshake.query?.token as string);
     try {
-      const payload = this.jwtService.verify(token, {
+      const payload = this.jwtService.verify<JwtPayload>(token, {
         secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
       });
-      client.data.userId = payload.sub;
-      client.data.role = payload.role;
-      client.join(`user:${payload.sub}`);
+      const user: SocketUser = { userId: payload.sub, role: payload.role };
+      client.data = user;
+      void client.join(`user:${payload.sub}`);
     } catch {
       client.disconnect();
     }
@@ -52,7 +63,7 @@ export class TripsGateway implements OnGatewayConnection {
       where: { id: tripId },
       include: { driver: true },
     });
-    const userId = client.data.userId;
+    const { userId } = socketUser(client);
     const isMember =
       trip && (trip.passengerId === userId || trip.driver?.userId === userId);
     if (!isMember) return;
@@ -68,7 +79,7 @@ export class TripsGateway implements OnGatewayConnection {
       where: { id: deliveryId },
       include: { rider: true },
     });
-    const userId = client.data.userId;
+    const { userId } = socketUser(client);
     const isMember =
       delivery &&
       (delivery.senderId === userId || delivery.rider?.userId === userId);
@@ -96,7 +107,7 @@ export class TripsGateway implements OnGatewayConnection {
         : null;
     if (!room) return;
     const isAssignedDriver = await this.tracking.recordDriverLocation(
-      (client.data as { userId: string }).userId,
+      socketUser(client).userId,
       { tripId: data.tripId, deliveryId: data.deliveryId },
       data.location,
     );
@@ -104,7 +115,7 @@ export class TripsGateway implements OnGatewayConnection {
     this.server.to(room).emit(SOCKET_EVENTS.DRIVER_LOCATION_UPDATE, {
       tripId: data.tripId,
       deliveryId: data.deliveryId,
-      driverId: client.data.userId,
+      driverId: socketUser(client).userId,
       location: data.location,
       heading: data.heading,
     });

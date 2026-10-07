@@ -10,7 +10,10 @@ export class CorsIoAdapter extends IoAdapter {
     super(app);
   }
 
-  createIOServer(port: number, options?: ServerOptions) {
-    return super.createIOServer(port, { ...options, cors: { origin: this.corsOrigin } });
+  createIOServer(port: number, options?: ServerOptions): unknown {
+    return super.createIOServer(port, {
+      ...options,
+      cors: { origin: this.corsOrigin },
+    });
   }
 }

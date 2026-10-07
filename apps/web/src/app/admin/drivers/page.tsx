@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -107,16 +107,24 @@ export default function AdminDriversPage() {
   const [drivers, setDrivers] = useState<DriverProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  function load() {
-    setLoading(true);
-    apiFetch<DriverProfile[]>("/drivers/pending")
-      .then(setDrivers)
-      .finally(() => setLoading(false));
-  }
+  // The first load needs no "loading" change: it starts true. Setting state synchronously
+  // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
+  const fetchAll = useCallback(
+    () =>
+      apiFetch<DriverProfile[]>("/drivers/pending")
+        .then(setDrivers)
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void fetchAll();
+  }, [fetchAll]);
+
+  function load() {
+    setLoading(true);
+    void fetchAll();
+  }
 
   async function approve(id: string) {
     await apiFetch(`/drivers/${id}/approve`, { method: "PATCH" });

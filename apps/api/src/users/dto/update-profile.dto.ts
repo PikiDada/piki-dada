@@ -7,7 +7,9 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^\+?[0-9 ()-]{7,20}$/, { message: 'phone must be a valid phone number' })
+  @Matches(/^\+?[0-9 ()-]{7,20}$/, {
+    message: 'phone must be a valid phone number',
+  })
   phone?: string;
 
   @IsOptional()

@@ -79,7 +79,7 @@ export default function InstallPage() {
             <p className="font-medium text-black">To install on iPhone/iPad:</p>
             <ol className="list-decimal space-y-1 pl-4">
               <li>
-                Tap the <strong>Share</strong> icon in Safari's toolbar
+                Tap the <strong>Share</strong> icon in Safari&apos;s toolbar
               </li>
               <li>
                 Scroll down and tap <strong>Add to Home Screen</strong>

@@ -106,7 +106,8 @@ export default function AdminDashboardPage() {
   const [rangeTo, setRangeTo] = useState(() => toDateInput(preset("thisMonth").to));
   const [activePreset, setActivePreset] = useState<string>("thisMonth");
   const [rangeData, setRangeData] = useState<RangeFinance | null>(null);
-  const [rangeLoading, setRangeLoading] = useState(false);
+  // True from the start: the range loads as soon as the page opens.
+  const [rangeLoading, setRangeLoading] = useState(true);
   const [rangeError, setRangeError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,18 +115,23 @@ export default function AdminDashboardPage() {
     apiFetch<Finance>("/admin/finance").then(setFinance);
   }, []);
 
-  function loadRange(from: string, to: string) {
-    if (!from || !to) return;
-    setRangeLoading(true);
-    setRangeError(null);
-    apiFetch<RangeFinance>(`/admin/finance/range?from=${from}&to=${to}`)
+  // State changes only after the request, so the effect below causes no extra render.
+  function fetchRange(from: string, to: string) {
+    return apiFetch<RangeFinance>(`/admin/finance/range?from=${from}&to=${to}`)
       .then(setRangeData)
       .catch((err) => setRangeError(err instanceof Error ? err.message : "Could not load that range"))
       .finally(() => setRangeLoading(false));
   }
 
+  function loadRange(from: string, to: string) {
+    if (!from || !to) return;
+    setRangeLoading(true);
+    setRangeError(null);
+    void fetchRange(from, to);
+  }
+
   useEffect(() => {
-    loadRange(rangeFrom, rangeTo);
+    void fetchRange(rangeFrom, rangeTo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

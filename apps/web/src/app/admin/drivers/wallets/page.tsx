@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,16 +97,24 @@ export default function AdminRiderWalletsPage() {
   const [wallets, setWallets] = useState<RiderWallet[]>([]);
   const [loading, setLoading] = useState(true);
 
-  function load() {
-    setLoading(true);
-    apiFetch<RiderWallet[]>("/admin/drivers/wallets")
-      .then(setWallets)
-      .finally(() => setLoading(false));
-  }
+  // The first load needs no "loading" change: it starts true. Setting state synchronously
+  // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
+  const fetchAll = useCallback(
+    () =>
+      apiFetch<RiderWallet[]>("/admin/drivers/wallets")
+        .then(setWallets)
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void fetchAll();
+  }, [fetchAll]);
+
+  function load() {
+    setLoading(true);
+    void fetchAll();
+  }
 
   const owing = wallets.filter((w) => w.balance < 0);
   const totalOwed = owing.reduce((sum, w) => sum + w.balance, 0);

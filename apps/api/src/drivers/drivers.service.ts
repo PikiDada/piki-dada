@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DocumentType, DriverApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
@@ -23,10 +27,17 @@ export class DriversService {
   async getMyProfile(userId: string) {
     const driver = await this.prisma.driver.findUnique({
       where: { userId },
-      include: { vehicle: true, documents: true, user: { omit: { passwordHash: true } } },
+      include: {
+        vehicle: true,
+        documents: true,
+        user: { omit: { passwordHash: true } },
+      },
     });
     if (!driver) return driver;
-    return { ...driver, user: driver.user ? decryptUserPhone(driver.user) : driver.user };
+    return {
+      ...driver,
+      user: driver.user ? decryptUserPhone(driver.user) : driver.user,
+    };
   }
 
   async upsertVehicle(userId: string, dto: CreateVehicleDto) {
@@ -48,9 +59,14 @@ export class DriversService {
   async setAvailability(userId: string, isOnline: boolean) {
     const driver = await this.getDriverByUserId(userId);
     if (isOnline && driver.approvalStatus !== DriverApprovalStatus.APPROVED) {
-      throw new BadRequestException('Rider must be approved before going online');
+      throw new BadRequestException(
+        'Rider must be approved before going online',
+      );
     }
-    return this.prisma.driver.update({ where: { id: driver.id }, data: { isOnline } });
+    return this.prisma.driver.update({
+      where: { id: driver.id },
+      data: { isOnline },
+    });
   }
 
   async updateLocation(userId: string, lat: number, lng: number) {
@@ -64,7 +80,11 @@ export class DriversService {
   async listPendingApprovals() {
     const drivers = await this.prisma.driver.findMany({
       where: { approvalStatus: DriverApprovalStatus.PENDING },
-      include: { user: { omit: { passwordHash: true } }, vehicle: true, documents: true },
+      include: {
+        user: { omit: { passwordHash: true } },
+        vehicle: true,
+        documents: true,
+      },
     });
     return drivers.map((driver) => ({
       ...driver,
@@ -81,7 +101,9 @@ export class DriversService {
       throw new NotFoundException('Rider not found');
     }
     if (status === DriverApprovalStatus.APPROVED && !driver.vehicle) {
-      throw new BadRequestException('Rider must have a vehicle on file before approval');
+      throw new BadRequestException(
+        'Rider must have a vehicle on file before approval',
+      );
     }
     const updated = await this.prisma.driver.update({
       where: { id: driverId },
@@ -89,7 +111,9 @@ export class DriversService {
     });
     this.notifications.notifyUser(
       driver.userId,
-      status === DriverApprovalStatus.APPROVED ? 'Application approved' : 'Application rejected',
+      status === DriverApprovalStatus.APPROVED
+        ? 'Application approved'
+        : 'Application rejected',
       status === DriverApprovalStatus.APPROVED
         ? 'You can now go online and start accepting rides.'
         : 'Your rider application was rejected. Contact support for details.',

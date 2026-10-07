@@ -42,9 +42,6 @@ import { PricingSettingsModule } from './pricing-settings/pricing-settings.modul
     PushModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

@@ -12,7 +12,10 @@ export class NotificationsService {
   async notifyUser(userId: string, title: string, body: string) {
     const [, user] = await Promise.all([
       this.prisma.notification.create({ data: { userId, title, body } }),
-      this.prisma.user.findUnique({ where: { id: userId }, select: { fcmToken: true } }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fcmToken: true },
+      }),
     ]);
     await this.pushService.sendToToken(user?.fcmToken, title, body);
   }
@@ -26,6 +29,9 @@ export class NotificationsService {
   }
 
   markRead(id: string) {
-    return this.prisma.notification.update({ where: { id }, data: { isRead: true } });
+    return this.prisma.notification.update({
+      where: { id },
+      data: { isRead: true },
+    });
   }
 }

@@ -16,6 +16,33 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // a residential connection — give every test/hook a generous default rather than tuning each one.
 jest.setTimeout(60000);
 
+// Shapes of the responses these tests read; supertest types every body as `any`.
+interface AuthBody {
+  accessToken: string;
+  refreshToken?: string;
+  user: { id: string };
+}
+interface ErrorBody {
+  message: string;
+}
+interface ProfileBody {
+  phone: string | null;
+}
+interface PendingDriverBody {
+  id: string;
+  userId: string;
+}
+interface TripRequestBody {
+  trip: { id: string };
+}
+interface WalletBody {
+  balance: number;
+}
+
+function body<T>(res: { body: unknown }): T {
+  return res.body as T;
+}
+
 describe('Auth and payments (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -30,7 +57,9 @@ describe('Auth and payments (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
     prisma = moduleFixture.get(PrismaService);
   }, 30000); // Neon's serverless cold-start can exceed Jest's 5s default hook timeout.
@@ -65,8 +94,10 @@ describe('Auth and payments (e2e)', () => {
   });
 
   describe('cookie-based refresh token flow', () => {
-    function extractRefreshCookie(res: { headers: Record<string, unknown> }): string {
-      const setCookie = res.headers['set-cookie'] as unknown as string[];
+    function extractRefreshCookie(res: {
+      headers: Record<string, unknown>;
+    }): string {
+      const setCookie = res.headers['set-cookie'] as string[];
       const found = setCookie?.find((c) => c.startsWith('refreshToken='));
       if (!found) throw new Error('refreshToken cookie was not set');
       return found.split(';')[0];
@@ -84,8 +115,8 @@ describe('Auth and payments (e2e)', () => {
         })
         .expect(201);
 
-      expect(res.body.refreshToken).toBeUndefined();
-      expect(res.body.accessToken).toBeDefined();
+      expect(body<AuthBody>(res).refreshToken).toBeUndefined();
+      expect(body<AuthBody>(res).accessToken).toBeDefined();
       extractRefreshCookie(res); // throws if missing
     });
 
@@ -106,7 +137,7 @@ describe('Auth and payments (e2e)', () => {
         .post('/auth/refresh')
         .set('Cookie', originalCookie)
         .expect(201);
-      expect(refreshRes.body.accessToken).toBeDefined();
+      expect(body<AuthBody>(refreshRes).accessToken).toBeDefined();
       const rotatedCookie = extractRefreshCookie(refreshRes);
       expect(rotatedCookie).not.toBe(originalCookie);
 
@@ -177,7 +208,7 @@ describe('Auth and payments (e2e)', () => {
         .post('/auth/login')
         .send({ email, password: 'password123' })
         .expect(401);
-      expect(res.body.message).toMatch(/temporarily locked/i);
+      expect(body<ErrorBody>(res).message).toMatch(/temporarily locked/i);
     }, 60000);
   });
 
@@ -202,9 +233,12 @@ describe('Auth and payments (e2e)', () => {
 
       const me = await request(app.getHttpServer())
         .get('/users/me')
-        .set('Authorization', `Bearer ${registerRes.body.accessToken}`)
+        .set(
+          'Authorization',
+          `Bearer ${body<AuthBody>(registerRes).accessToken}`,
+        )
         .expect(200);
-      expect(me.body.phone).toBe(plainPhone);
+      expect(body<ProfileBody>(me).phone).toBe(plainPhone);
     }, 15000);
   });
 
@@ -227,7 +261,7 @@ describe('Auth and payments (e2e)', () => {
           role: 'PASSENGER',
         })
         .expect(201);
-      passengerToken = passengerRes.body.accessToken;
+      passengerToken = body<AuthBody>(passengerRes).accessToken;
 
       const driverRes = await request(app.getHttpServer())
         .post('/auth/register')
@@ -239,8 +273,8 @@ describe('Auth and payments (e2e)', () => {
           role: 'DRIVER',
         })
         .expect(201);
-      driverToken = driverRes.body.accessToken;
-      driverUserId = driverRes.body.user.id;
+      driverToken = body<AuthBody>(driverRes).accessToken;
+      driverUserId = body<AuthBody>(driverRes).user.id;
 
       await request(app.getHttpServer())
         .post('/drivers/me/vehicle')
@@ -269,11 +303,13 @@ describe('Auth and payments (e2e)', () => {
         .post('/auth/login')
         .send({ email: adminEmail, password: 'password123' })
         .expect(201);
-      adminToken = adminLogin.body.accessToken;
+      adminToken = body<AuthBody>(adminLogin).accessToken;
 
       // This admin was seeded with a legacy bcrypt hash — a successful login should have
       // transparently upgraded it to Argon2id (Argon2id hashes never start with "$2").
-      const upgradedAdmin = await prisma.user.findUniqueOrThrow({ where: { email: adminEmail } });
+      const upgradedAdmin = await prisma.user.findUniqueOrThrow({
+        where: { email: adminEmail },
+      });
       expect(upgradedAdmin.passwordHash?.startsWith('$2')).toBe(false);
       // The new hash must still authenticate the same password.
       await request(app.getHttpServer())
@@ -285,8 +321,10 @@ describe('Auth and payments (e2e)', () => {
         .get('/drivers/pending')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
-      const pendingDriver = pending.body.find((d: { userId: string }) => d.userId === driverUserId);
-      driverId = pendingDriver.id;
+      const pendingDriver = body<PendingDriverBody[]>(pending).find(
+        (d) => d.userId === driverUserId,
+      );
+      driverId = pendingDriver!.id;
       await request(app.getHttpServer())
         .patch(`/drivers/${driverId}/approve`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -317,7 +355,7 @@ describe('Auth and payments (e2e)', () => {
           paymentMethod: 'CASH',
         })
         .expect(201);
-      tripId = tripRes.body.trip.id;
+      tripId = body<TripRequestBody>(tripRes).trip.id;
     }, 60000);
 
     it('accepts the trip for the first driver', async () => {
@@ -348,7 +386,10 @@ describe('Auth and payments (e2e)', () => {
 
       await request(app.getHttpServer())
         .get(`/trips/${tripId}`)
-        .set('Authorization', `Bearer ${outsiderRes.body.accessToken}`)
+        .set(
+          'Authorization',
+          `Bearer ${body<AuthBody>(outsiderRes).accessToken}`,
+        )
         .expect(403);
 
       // The actual passenger on the trip should still be able to fetch it.
@@ -373,7 +414,7 @@ describe('Auth and payments (e2e)', () => {
         .get('/wallet/me')
         .set('Authorization', `Bearer ${driverToken}`)
         .expect(200);
-      expect(wallet.body.balance).toBe(0);
+      expect(body<WalletBody>(wallet).balance).toBe(0);
     });
 
     it('credits the driver wallet once the passenger confirms cash payment', async () => {
@@ -386,7 +427,7 @@ describe('Auth and payments (e2e)', () => {
         .get('/wallet/me')
         .set('Authorization', `Bearer ${driverToken}`)
         .expect(200);
-      expect(wallet.body.balance).toBeGreaterThan(0);
+      expect(body<WalletBody>(wallet).balance).toBeGreaterThan(0);
     });
 
     it('rejects confirming the same cash payment twice', async () => {

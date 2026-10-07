@@ -14,14 +14,21 @@ export function hashPassword(password: string): Promise<string> {
 }
 
 export function isLegacyBcryptHash(hash: string): boolean {
-  return hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$');
+  return (
+    hash.startsWith('$2a$') ||
+    hash.startsWith('$2b$') ||
+    hash.startsWith('$2y$')
+  );
 }
 
 // Accounts created before the Argon2id migration still have bcrypt hashes. Verify against
 // whichever algorithm produced the stored hash — the caller is responsible for re-hashing
 // with hashPassword() on a successful legacy verify, since that's the only point we ever
 // have the plaintext password again.
-export function verifyPassword(hash: string, password: string): Promise<boolean> {
+export function verifyPassword(
+  hash: string,
+  password: string,
+): Promise<boolean> {
   if (isLegacyBcryptHash(hash)) {
     return bcrypt.compare(password, hash);
   }

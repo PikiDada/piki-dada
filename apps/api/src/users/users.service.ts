@@ -46,7 +46,10 @@ export class UsersService {
   ) {
     return this.prisma.user.update({
       where: { id },
-      data: { ...data, phone: data.phone !== undefined ? encryptField(data.phone) : undefined },
+      data: {
+        ...data,
+        phone: data.phone !== undefined ? encryptField(data.phone) : undefined,
+      },
     });
   }
 

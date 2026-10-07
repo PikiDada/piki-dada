@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,22 +61,30 @@ export default function AdminDeliverySizeTiersPage() {
   const [newMaxWeight, setNewMaxWeight] = useState("");
   const [creating, setCreating] = useState(false);
 
-  function load() {
-    setLoading(true);
-    Promise.all([
-      apiFetch<DeliverySizeTier[]>("/admin/delivery-size-tiers"),
-      apiFetch<SurchargeRule[]>("/admin/delivery-surcharges"),
-    ])
-      .then(([t, s]) => {
-        setTiers(t);
-        setSurcharges(s);
-      })
-      .finally(() => setLoading(false));
-  }
+  // The first load needs no "loading" change: it starts true. Setting state synchronously
+  // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
+  const fetchAll = useCallback(
+    () =>
+      Promise.all([
+        apiFetch<DeliverySizeTier[]>("/admin/delivery-size-tiers"),
+        apiFetch<SurchargeRule[]>("/admin/delivery-surcharges"),
+      ])
+        .then(([t, s]) => {
+          setTiers(t);
+          setSurcharges(s);
+        })
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void fetchAll();
+  }, [fetchAll]);
+
+  function load() {
+    setLoading(true);
+    void fetchAll();
+  }
 
   function updateTier(id: string, patch: Partial<DeliverySizeTier>) {
     setTiers((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));

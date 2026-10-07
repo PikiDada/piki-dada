@@ -165,7 +165,7 @@ export class TripsService {
     return updated;
   }
 
-  async rejectTrip(driverUserId: string, tripId: string) {
+  rejectTrip(driverUserId: string, tripId: string) {
     this.gateway.emitToUser(driverUserId, SOCKET_EVENTS.TRIP_REJECTED, {
       tripId,
     });

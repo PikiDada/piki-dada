@@ -222,7 +222,7 @@ function DriverTripView({ id }: { id: string }) {
 
           {trip.status === "COMPLETED" && trip.payment?.status !== "PAID" && (
             <p className="text-center text-green-600">
-              Trip completed! Earnings are added to your wallet once the passenger's payment is
+              Trip completed! Earnings are added to your wallet once the passenger&apos;s payment is
               confirmed.
             </p>
           )}

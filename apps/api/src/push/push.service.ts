@@ -25,7 +25,9 @@ export class PushService {
     } else {
       this.publicKey = null;
       this.enabled = false;
-      this.logger.warn('VAPID keys not configured — push notifications are disabled');
+      this.logger.warn(
+        'VAPID keys not configured — push notifications are disabled',
+      );
     }
   }
 
@@ -56,7 +58,9 @@ export class PushService {
 
   async broadcast(title: string, body: string, url?: string) {
     if (!this.enabled) {
-      this.logger.warn('[Push disabled] Broadcast would have been sent but VAPID not configured');
+      this.logger.warn(
+        '[Push disabled] Broadcast would have been sent but VAPID not configured',
+      );
       return { sentCount: 0, failedCount: 0 };
     }
 
@@ -79,9 +83,13 @@ export class PushService {
           failedCount += 1;
           const statusCode = (err as { statusCode?: number }).statusCode;
           if (statusCode === 404 || statusCode === 410) {
-            await this.prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => undefined);
+            await this.prisma.pushSubscription
+              .delete({ where: { id: sub.id } })
+              .catch(() => undefined);
           } else {
-            this.logger.warn(`Push send failed for subscription ${sub.id}: ${String(err)}`);
+            this.logger.warn(
+              `Push send failed for subscription ${sub.id}: ${String(err)}`,
+            );
           }
         }
       }),
@@ -95,6 +103,9 @@ export class PushService {
   }
 
   listBroadcastHistory() {
-    return this.prisma.pushBroadcastLog.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
+    return this.prisma.pushBroadcastLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
   }
 }

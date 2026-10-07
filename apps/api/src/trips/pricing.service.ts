@@ -50,6 +50,11 @@ function billableWaitMinutes(stops: StopVisit[], freeMinutes: number): number {
   return total;
 }
 
+// The fields requested via X-Goog-FieldMask; everything may be missing if Google errs.
+interface GoogleRoutesResponse {
+  routes?: { distanceMeters?: number; duration?: string }[];
+}
+
 interface RoadRoute {
   distanceKm: number;
   durationMin: number;
@@ -159,7 +164,7 @@ export class PricingService {
     const intermediates = points.slice(1, -1);
 
     try {
-      const res = await axios.post(
+      const res = await axios.post<GoogleRoutesResponse>(
         'https://routes.googleapis.com/directions/v2:computeRoutes',
         {
           origin: waypoint(points[0]),
@@ -187,7 +192,11 @@ export class PricingService {
         String(route?.duration ?? '').replace('s', ''),
       );
 
-      if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSec)) {
+      if (
+        typeof distanceMeters !== 'number' ||
+        !Number.isFinite(distanceMeters) ||
+        !Number.isFinite(durationSec)
+      ) {
         this.logger.warn(
           'Routes API returned an unparseable response, falling back to estimated distance',
         );

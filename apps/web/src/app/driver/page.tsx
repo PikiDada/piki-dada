@@ -44,9 +44,10 @@ export default function DriverDashboardPage() {
   const [onlineBlockMsg, setOnlineBlockMsg] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
-  const loadProfile = useCallback(() => {
-    setLoadError(null);
-    apiFetch<DriverProfile>("/drivers/me")
+  // Fetches without clearing the error first, so the mount effect causes no extra render;
+  // loadProfile (the retry) clears it.
+  const fetchProfile = useCallback(() => {
+    return apiFetch<DriverProfile>("/drivers/me")
       .then((data) => {
         setProfile(data);
       })
@@ -59,9 +60,14 @@ export default function DriverDashboardPage() {
       });
   }, []);
 
+  const loadProfile = useCallback(() => {
+    setLoadError(null);
+    void fetchProfile();
+  }, [fetchProfile]);
+
   useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
+    void fetchProfile();
+  }, [fetchProfile]);
 
   useEffect(() => {
     const socket = getSocket();

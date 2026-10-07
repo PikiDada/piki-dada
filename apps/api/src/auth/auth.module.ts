@@ -10,7 +10,12 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 
 @Module({
-  imports: [PassportModule, JwtModule.register({}), UsersModule, NotificationsModule],
+  imports: [
+    PassportModule,
+    JwtModule.register({}),
+    UsersModule,
+    NotificationsModule,
+  ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, GoogleStrategy],
   exports: [AuthService],

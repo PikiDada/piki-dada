@@ -1,21 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bell } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { isPushSubscribed, isPushSupported, subscribeToPush } from "@/lib/pwa";
+import { subscribeToPush } from "@/lib/pwa";
+import { useCanOfferPush } from "@/hooks/use-can-offer-push";
 
 export function PushBell() {
-  const [visible, setVisible] = useState(false);
+  const canOffer = useCanOfferPush();
+  const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setVisible(
-      isPushSupported() &&
-        Notification.permission !== "denied" &&
-        !isPushSubscribed(),
-    );
-  }, []);
+  const visible = canOffer && !subscribed;
 
   async function handleSubscribe() {
     setLoading(true);
@@ -25,7 +20,7 @@ export function PushBell() {
         (subscription) =>
           apiFetch("/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
       );
-      if (result === "granted") setVisible(false);
+      if (result === "granted") setSubscribed(true);
     } finally {
       setLoading(false);
     }

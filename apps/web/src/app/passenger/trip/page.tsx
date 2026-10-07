@@ -194,10 +194,10 @@ function PassengerTripView({ id }: { id: string }) {
             trip.payment?.status !== "PAID" && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">
-                  Confirm you've paid the driver {trip.fare?.toLocaleString()} {trip.currency} in cash
+                  Confirm you&apos;ve paid the driver {trip.fare?.toLocaleString()} {trip.currency} in cash
                 </p>
                 <Button className="w-full" onClick={handleConfirmCash}>
-                  I've paid in cash
+                  I&apos;ve paid in cash
                 </Button>
               </div>
             )}

@@ -1,7 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
+import { readCookie } from '../common/cookies';
+import type { GoogleProfile } from './auth.service';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -32,7 +44,8 @@ export class AuthController {
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
       path: '/',
-      maxAge: Number(this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN')) * 1000,
+      maxAge:
+        Number(this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN')) * 1000,
     });
   }
 
@@ -93,7 +106,7 @@ export class AuthController {
   @UseGuards(SameOriginGuard)
   @Post('logout')
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.[REFRESH_COOKIE_NAME];
+    const token = readCookie(req, REFRESH_COOKIE_NAME);
     if (token) await this.authService.logout(token);
     this.clearRefreshCookie(res);
     return { success: true };
@@ -161,7 +174,10 @@ export class AuthController {
 
   @UseGuards(GoogleAuthGuard)
   @Get('google/callback')
-  async googleCallback(@Req() req, @Res() res: Response) {
+  async googleCallback(
+    @Req() req: Request & { user: GoogleProfile },
+    @Res() res: Response,
+  ) {
     const tokens = await this.authService.loginWithGoogle(
       req.user,
       undefined,

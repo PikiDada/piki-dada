@@ -13,14 +13,18 @@ import { UsersService } from '../users/users.service';
 import { EmailService } from '../notifications/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { hashPassword, isLegacyBcryptHash, verifyPassword } from './password-hash';
+import {
+  hashPassword,
+  isLegacyBcryptHash,
+  verifyPassword,
+} from './password-hash';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 10;
 const ACCOUNT_LOCK_DURATION_MS = 15 * 60 * 1000;
 
-interface GoogleProfile {
+export interface GoogleProfile {
   googleId: string;
   email: string;
   name: string;
@@ -71,7 +75,11 @@ export class AuthService {
     return tokens;
   }
 
-  private async createToken(userId: string, purpose: VerificationTokenPurpose, ttlMs: number) {
+  private async createToken(
+    userId: string,
+    purpose: VerificationTokenPurpose,
+    ttlMs: number,
+  ) {
     const token = randomBytes(32).toString('hex');
     await this.prisma.verificationToken.create({
       data: { token, userId, purpose, expiresAt: new Date(Date.now() + ttlMs) },
@@ -80,8 +88,15 @@ export class AuthService {
   }
 
   private async consumeToken(token: string, purpose: VerificationTokenPurpose) {
-    const record = await this.prisma.verificationToken.findUnique({ where: { token } });
-    if (!record || record.purpose !== purpose || record.usedAt || record.expiresAt < new Date()) {
+    const record = await this.prisma.verificationToken.findUnique({
+      where: { token },
+    });
+    if (
+      !record ||
+      record.purpose !== purpose ||
+      record.usedAt ||
+      record.expiresAt < new Date()
+    ) {
       throw new BadRequestException('Invalid or expired token');
     }
     await this.prisma.verificationToken.update({
@@ -101,7 +116,10 @@ export class AuthService {
   }
 
   async verifyEmail(token: string) {
-    const record = await this.consumeToken(token, VerificationTokenPurpose.EMAIL_VERIFICATION);
+    const record = await this.consumeToken(
+      token,
+      VerificationTokenPurpose.EMAIL_VERIFICATION,
+    );
     await this.prisma.user.update({
       where: { id: record.userId },
       data: { emailVerifiedAt: new Date() },
@@ -135,7 +153,10 @@ export class AuthService {
   }
 
   async resetPassword(token: string, newPassword: string) {
-    const record = await this.consumeToken(token, VerificationTokenPurpose.PASSWORD_RESET);
+    const record = await this.consumeToken(
+      token,
+      VerificationTokenPurpose.PASSWORD_RESET,
+    );
     const passwordHash = await hashPassword(newPassword);
     await this.prisma.user.update({
       where: { id: record.userId },
@@ -143,7 +164,9 @@ export class AuthService {
       data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
     });
     // Invalidate existing sessions so a stolen/old session can't outlive the password change.
-    await this.prisma.refreshToken.deleteMany({ where: { userId: record.userId } });
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId: record.userId },
+    });
     return { success: true };
   }
 
@@ -238,7 +261,9 @@ export class AuthService {
   }
 
   async logout(refreshToken: string) {
-    await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+    await this.prisma.refreshToken.deleteMany({
+      where: { token: refreshToken },
+    });
     return { success: true };
   }
 
@@ -251,7 +276,9 @@ export class AuthService {
   }
 
   async revokeSession(userId: string, sessionId: string) {
-    await this.prisma.refreshToken.deleteMany({ where: { id: sessionId, userId } });
+    await this.prisma.refreshToken.deleteMany({
+      where: { id: sessionId, userId },
+    });
     return { success: true };
   }
 
@@ -269,11 +296,15 @@ export class AuthService {
     const payload = { sub: userId, email, role };
     const accessToken = this.jwtService.sign(payload, {
       secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-      expiresIn: Number(this.config.getOrThrow<string>('JWT_ACCESS_EXPIRES_IN')),
+      expiresIn: Number(
+        this.config.getOrThrow<string>('JWT_ACCESS_EXPIRES_IN'),
+      ),
     });
     const refreshToken = this.jwtService.sign(payload, {
       secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn: Number(this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN')),
+      expiresIn: Number(
+        this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN'),
+      ),
     });
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);

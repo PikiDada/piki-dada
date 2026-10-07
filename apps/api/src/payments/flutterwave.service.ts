@@ -16,7 +16,7 @@ export class FlutterwaveService {
     customerEmail: string;
     redirectUrl: string;
   }) {
-    const res = await axios.post(
+    const res = await axios.post<{ data: { link: string } }>(
       'https://api.flutterwave.com/v3/payments',
       {
         tx_ref: `${params.kind}-${params.referenceId}-${Date.now()}`,
@@ -32,7 +32,7 @@ export class FlutterwaveService {
         },
       },
     );
-    return res.data.data.link as string;
+    return res.data.data.link;
   }
 
   verifyWebhookSignature(signatureHeader: string | undefined) {
@@ -41,7 +41,7 @@ export class FlutterwaveService {
   }
 
   async verifyTransaction(transactionId: string) {
-    const res = await axios.get(
+    const res = await axios.get<{ data: unknown }>(
       `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`,
       {
         headers: {

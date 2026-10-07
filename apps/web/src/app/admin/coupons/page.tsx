@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,16 +34,24 @@ export default function AdminCouponsPage() {
   const [discountPercent, setDiscountPercent] = useState("");
   const [maxUses, setMaxUses] = useState("");
 
-  function load() {
-    setLoading(true);
-    apiFetch<Coupon[]>("/admin/coupons")
-      .then(setCoupons)
-      .finally(() => setLoading(false));
-  }
+  // The first load needs no "loading" change: it starts true. Setting state synchronously
+  // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
+  const fetchAll = useCallback(
+    () =>
+      apiFetch<Coupon[]>("/admin/coupons")
+        .then(setCoupons)
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void fetchAll();
+  }, [fetchAll]);
+
+  function load() {
+    setLoading(true);
+    void fetchAll();
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();

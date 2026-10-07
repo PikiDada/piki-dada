@@ -9,13 +9,13 @@ import { apiFetch } from "@/lib/api";
 function VerifyEmailInner() {
   const params = useSearchParams();
   const token = params.get("token") ?? "";
-  const [status, setStatus] = useState<"pending" | "success" | "error">("pending");
+  // A link with no token is an error from the start; no need to set it from an effect.
+  const [status, setStatus] = useState<"pending" | "success" | "error">(
+    token ? "pending" : "error",
+  );
 
   useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      return;
-    }
+    if (!token) return;
     apiFetch("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) })
       .then(() => setStatus("success"))
       .catch(() => setStatus("error"));

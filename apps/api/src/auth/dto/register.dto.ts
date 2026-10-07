@@ -18,9 +18,11 @@ export class RegisterDto {
   name: string;
 
   @IsString()
-  @Matches(/^\+?[0-9 ()-]{7,20}$/, { message: 'phone must be a valid phone number' })
+  @Matches(/^\+?[0-9 ()-]{7,20}$/, {
+    message: 'phone must be a valid phone number',
+  })
   phone: string;
 
   @IsIn(SELF_REGISTERABLE_ROLES)
-  role: typeof SELF_REGISTERABLE_ROLES[number];
+  role: (typeof SELF_REGISTERABLE_ROLES)[number];
 }

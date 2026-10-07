@@ -25,7 +25,10 @@ export class UsersController {
   }
 
   @Patch('me')
-  async updateMe(@CurrentUser() user: { id: string }, @Body() dto: UpdateProfileDto) {
+  async updateMe(
+    @CurrentUser() user: { id: string },
+    @Body() dto: UpdateProfileDto,
+  ) {
     const updated = await this.usersService.updateProfile(user.id, dto);
     const { passwordHash, ...safeUser } = updated;
     return decryptUserPhone(safeUser);

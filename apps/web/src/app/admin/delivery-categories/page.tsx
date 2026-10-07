@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,16 +32,24 @@ export default function AdminDeliveryCategoriesPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  function load() {
-    setLoading(true);
-    apiFetch<DeliveryCategory[]>("/admin/delivery-categories")
-      .then(setCategories)
-      .finally(() => setLoading(false));
-  }
+  // The first load needs no "loading" change: it starts true. Setting state synchronously
+  // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
+  const fetchAll = useCallback(
+    () =>
+      apiFetch<DeliveryCategory[]>("/admin/delivery-categories")
+        .then(setCategories)
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void fetchAll();
+  }, [fetchAll]);
+
+  function load() {
+    setLoading(true);
+    void fetchAll();
+  }
 
   function updateCategory(id: string, patch: Partial<DeliveryCategory>) {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));

@@ -5,14 +5,15 @@ on:
   push:
     branches: [main]
 
+# pnpm's version comes from package.json's "packageManager" field. Also passing `version:`
+# to pnpm/action-setup made every run fail at setup ("Multiple versions of pnpm specified").
+
 jobs:
   api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -20,15 +21,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter api exec prisma generate
       - run: pnpm --filter api build
-      - run: pnpm --filter api lint
+      # Lint without --fix (the package's own "lint" script fixes files), so CI reports
+      # problems instead of silently rewriting a throwaway checkout.
+      - run: pnpm --filter api exec eslint "{src,apps,libs,test}/**/*.ts"
+      # Unit tests only: they need no database. The e2e suite runs against a real database.
+      - run: pnpm --filter api test
 
   web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -36,3 +39,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web exec tsc --noEmit
       - run: pnpm --filter web lint
+      # The site ships as a static export; catches anything that breaks it (e.g. a page that
+      # needs a server).
+      - run: pnpm --filter web build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.pikidada.com
+
+  maps:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/maps
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/maps/go.mod
+          cache-dependency-path: services/maps/go.sum
+      - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test ./...

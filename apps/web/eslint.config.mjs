@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // A manual Node script for exercising sockets (see SOCKET_IO_TESTING.md), not app code.
+    "test-socket.js",
   ]),
 ]);
 

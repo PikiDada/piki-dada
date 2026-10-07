@@ -22,11 +22,18 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
 
     this.enabled = !!(clientID && clientSecret && callbackURL);
     if (!this.enabled) {
-      console.warn('[GoogleStrategy] Google OAuth credentials not configured — Google login is disabled');
+      console.warn(
+        '[GoogleStrategy] Google OAuth credentials not configured — Google login is disabled',
+      );
     }
   }
 
-  validate(accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) {
+  validate(
+    accessToken: string,
+    refreshToken: string,
+    profile: Profile,
+    done: VerifyCallback,
+  ) {
     const { id, name, emails, photos } = profile;
     const user = {
       googleId: id,
