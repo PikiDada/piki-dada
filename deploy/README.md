@@ -6,6 +6,63 @@ The steps below need your Hetzner account, your domain's DNS, and hands-on-the-s
 access — none of that is something that can be done from here. Full context and rationale
 for each decision is in the approved migration plan; this is the condensed checklist.
 
+## Before Hetzner: DNS to Cloudflare, incoming email to Gmail
+
+Independent of the server move, and worth doing first: it fixes incoming email, which is
+broken today. The MX record says "deliver to pikidada.com", and pikidada.com points at
+Vercel, which doesn't accept email. After this, mail to any @pikidada.com address you
+create is forwarded to pikidada8@gmail.com by Cloudflare Email Routing (free). DNS for
+pikidada.com is currently hosted by the cPanel provider (ns1/ns2.crystalcloudhost.net).
+
+1. **Save old mail first.** In cPanel → Email Accounts, check for existing mailboxes. That
+   server still holds whatever arrived before email broke; export anything worth keeping
+   (webmail.pikidada.com) before cancelling cPanel hosting later.
+2. **Add pikidada.com to Cloudflare** (free plan). Cloudflare scans and imports existing
+   records. Compare its list against the table below and add anything it missed. Set every
+   record to **DNS only** (grey cloud): Vercel and Render issue their own certificates.
+
+   Records found on 7 Oct 2026 (the provider refuses a full listing, so check your SendGrid
+   and Brevo dashboards under sender/domain authentication for any others, such as a
+   SendGrid `em…` CNAME):
+
+   | Name | Type | Value | Keep? |
+   |---|---|---|---|
+   | `pikidada.com` | A | 216.198.79.1 (Vercel) | Keep until Hetzner |
+   | `www` | CNAME | 33b12cfc90f84edd.vercel-dns-017.com | Keep until Hetzner |
+   | `api` | CNAME | piki-dada-api-xgen.onrender.com | Keep until Hetzner |
+   | `s1._domainkey`, `s2._domainkey` | CNAME | s1/s2.domainkey.u111877761.wl012.sendgrid.net | Keep: SendGrid signing |
+   | `brevo1._domainkey`, `brevo2._domainkey` | CNAME | b1/b2.pikidada-com.dkim.brevo.com | Keep: Brevo signing |
+   | `pikidada.com` | TXT | `brevo-code:…`, `b03c01001@smtp-brevo.com` | Keep: Brevo verification |
+   | `mail` | TXT | `xsmtpsib-…` | Keep: Brevo verification |
+   | `_dmarc` | TXT | `v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com` | Keep |
+   | `pikidada.com` | TXT | `v=spf1 +a +mx +ip4:172.93.110.104 ~all` | **Replace** (step 4) |
+   | `pikidada.com` | MX | `0 pikidada.com` | **Delete** (step 4 adds Cloudflare's) |
+   | `cpanel`, `webmail` | A | 172.93.110.104 | Keep until old mail is exported |
+   | `whm`, `webdisk`, `cpcalendars`, `cpcontacts`, `autoconfig`, `autodiscover`, `ftp` | A | 172.93.110.104 | Drop (cPanel only) |
+   | `_autodiscover._tcp` | SRV | cpanelemaildiscovery.cpanel.net | Drop (cPanel only) |
+   | `default._domainkey`, `_cpanel-dcv-test-record`, `_acme-challenge` | TXT | cPanel / old certificate checks | Drop |
+
+3. **Switch nameservers** at the registrar where pikidada.com is registered (possibly the same
+   provider as cPanel) to the two Cloudflare gives you. With the records copied, nothing goes
+   down; the change takes from minutes to a day to spread.
+4. **Turn on Email Routing** (Cloudflare → Email → Email Routing): add pikidada8@gmail.com as
+   the destination (Gmail receives a confirmation link), then create the addresses you want
+   (e.g. `support@`, `info@`) or a catch-all. Let Cloudflare add its MX records, delete the
+   old `0 pikidada.com` MX, and keep **one** SPF record that covers both receiving and every
+   service that sends as @pikidada.com:
+
+   ```
+   v=spf1 include:_spf.mx.cloudflare.net include:sendgrid.net include:spf.brevo.com ~all
+   ```
+
+   Add `include:amazonses.com` once Amazon SES sends the app's email (Hetzner, Phase 0
+   step 4), and drop SendGrid/Brevo from it when they're no longer used.
+5. **Test:** from another address, send to `support@pikidada.com` and confirm it arrives in
+   Gmail. To reply *as* that address, add it in Gmail → Settings → Accounts → "Send mail as",
+   using a sending service's SMTP login (Brevo or SendGrid now, SES later).
+
+From here on, every DNS change in this guide (Phase 2) happens in Cloudflare.
+
 ## Phase 0 — Provision & prep
 
 1. **Create the server**: Hetzner Cloud → new server, ~2 vCPU / 4GB RAM, Ubuntu 24.04 LTS,
@@ -59,7 +116,7 @@ Pick a low-traffic time (late night, Kampala time).
    the usage block at the top of the script; `DATABASE_URL` there must be the new
    self-hosted Postgres.
 3. Re-point DNS:
-   - `api.pikidada.com` → the Hetzner server's IP (was the Render/Cloudflare CNAME)
+   - `api.pikidada.com` → the Hetzner server's IP (currently a CNAME to piki-dada-api-xgen.onrender.com)
    - `pikidada.com` and `www.pikidada.com` → the Hetzner server's IP (was Vercel)
    - `files.pikidada.com` → the Hetzner server's IP (new record, for MinIO document previews)
 4. Wait for DNS to propagate, then confirm Caddy issued certificates for all four hostnames:
