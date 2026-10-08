@@ -6,6 +6,18 @@ The steps below need your Hetzner account, your domain's DNS, and hands-on-the-s
 access — none of that is something that can be done from here. Full context and rationale
 for each decision is in the approved migration plan; this is the condensed checklist.
 
+## Start these early (they take days, not minutes)
+
+| What | Why it can't wait | Where |
+|---|---|---|
+| **Amazon SES production access** | New SES accounts can only email verified addresses until AWS approves production access, which can take a day or more. Without it, riders and passengers get no verification or receipt emails after the move | Phase 0 step 4 |
+| **Hetzner account** | New accounts are sometimes asked for ID verification before a server can be created | hetzner.com |
+| **Hetzner Storage Box** (BX11, the smallest, is plenty) | Off-server home for nightly backups. Supabase backed up for you; on Hetzner nothing does unless this is set up | "Backups and restoring" below |
+| **DNS on Cloudflare** | Every cutover step is a DNS change; on Cloudflare they take effect in minutes. Also fixes incoming email | Next section |
+| **Lower DNS TTLs** to 5 minutes, a day before the cutover | So the switch reaches everyone fast, and switching back is fast too | Cloudflare, on the `@`, `www` and `api` records |
+| **Payment webhooks** | Stripe and Flutterwave must call `https://api.pikidada.com/payments/webhooks/...`, not an `onrender.com` address, or payments stop confirming after the move | Stripe and Flutterwave dashboards |
+| **Google sign-in** | The OAuth redirect must be `https://api.pikidada.com/auth/google/callback` (same rule) | Google Cloud console, Credentials |
+
 ## Before Hetzner: DNS to Cloudflare, incoming email to Gmail
 
 Independent of the server move, and worth doing first: it fixes incoming email, which is
@@ -92,23 +104,39 @@ From here on, every DNS change in this guide (Phase 2) happens in Cloudflare.
 ## Phase 1 — Dry run (still no impact on the live site)
 
 1. `docker compose up -d postgres minio` (bring up just the stateful services first).
-2. Restore a copy of production data to test against (never point this at the live Supabase
-   instance in this phase):
+2. Restore a copy of production data to test against. `SUPABASE_DB_URL` is the
+   `DIRECT_URL` from the current API settings (Supabase's session pooler, port 5432). Only the
+   app's own tables (`public`) are copied: Supabase's internal parts (its auth, storage and
+   cron schemas) don't exist on plain Postgres and aren't used by the app. The dump runs in a
+   Postgres 17 container to match Supabase's version (17.6), and the restore stops at the
+   first error instead of carrying on with half the data:
    ```sh
-   pg_dump "$SUPABASE_DATABASE_URL" | docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+   docker run --rm postgres:17-alpine pg_dump "$SUPABASE_DB_URL"        --schema=public --no-owner --no-privileges      | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"
    ```
 3. `docker compose up -d --build` (build and start `api`, `maps` and `caddy` too; the website
    is built into the Caddy image as static files, so there's no separate web container).
 4. `docker compose exec api npx prisma migrate deploy` if migrations haven't run yet.
 5. Smoke test for real: register a fresh account, confirm the verification email actually
-   arrives (check spam), log in, take a test trip end-to-end, log into `/admin`.
+   arrives (check spam), log in, take a test trip end-to-end, log into `/admin`, and upload a
+   rider document to check file storage works.
+6. **Test the backups now, not after something breaks**: run `deploy/backup.sh` once, check
+   the files arrived on the Storage Box, and do the restore drill in "Backups and restoring".
 
 ## Phase 2 — Cutover (the maintenance window)
 
 Pick a low-traffic time (late night, Kampala time).
 
-1. Take a final `pg_dump` from Supabase and restore it the same way as Phase 1 step 2, so the
-   new database has everything up to the moment of cutover.
+1. Copy the final data. Anything booked on the old system after this point isn't copied,
+   which is why this runs at the quietest hour. Stop the new API, empty the dry-run data,
+   then restore exactly as in Phase 1 step 2, and note the time (the ping replay below needs
+   it):
+   ```sh
+   docker compose stop api
+   docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"      -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+   # ...the pg_dump | psql command from Phase 1 step 2...
+   date -u +%Y-%m-%dT%H:%M:%SZ
+   docker compose start api
+   ```
 2. **Move uploaded files off Supabase** — only after that final restore, since a later
    restore would bring the old links back. `scripts/migrate-storage.ts` copies every file
    from Supabase Storage into MinIO, then rewrites the database's file links to
@@ -156,8 +184,7 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
 
 ## Ongoing
 
-- Add `deploy/pg-backup.sh` to root's crontab (see the comment at the top of that file for
-  the exact line) — self-hosted Postgres has no automatic backups the way Supabase did.
+- Backups run nightly from cron; see "Backups and restoring" below.
 - `docker compose logs -f` / `docker compose ps` are your new Render dashboard.
 - **Memory**: each service has a `mem_limit` in `docker-compose.yml`, sized for a 4 GB
   server (about 2.9 GB in total). After a week of real traffic, check actual usage with
@@ -170,6 +197,34 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
   Kampala time (`docker compose logs osrm`).
 - `ufw allow 80,443,22/tcp && ufw enable` (or equivalent) so nothing but SSH and the reverse
   proxy is reachable from the internet.
+
+## Backups and restoring
+
+`deploy/backup.sh` copies, every night, everything that can't be rebuilt: the app's database,
+the maps platform's database (what it has learned about Kampala), and every uploaded file. It
+keeps 14 days on the server and copies everything to the Storage Box.
+
+**Set up (once):**
+1. Order a Hetzner Storage Box and turn on SSH support in its settings.
+2. On the server: `ssh-keygen -t ed25519` (no passphrase), then install the key on the box:
+   `cat ~/.ssh/id_ed25519.pub | ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de install-ssh-key`
+3. In the root `.env`: `BACKUP_REMOTE="uXXXXXX@uXXXXXX.your-storagebox.de:pikidada"`, and
+   create that folder: `ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de mkdir pikidada`.
+4. `crontab -e` and add: `0 1 * * * /opt/pikidada/deploy/backup.sh >> /var/log/pikidada-backup.log 2>&1`
+5. Run it once by hand and check it ends with "copied to ...".
+
+**Restore drill** (do it once in the dry run; it's also the real procedure):
+```sh
+# Database (replace the file name with the dump you want; pikidada_* is the app, maps_* the maps platform)
+docker compose stop api
+docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists   < /var/backups/pikidada/db/pikidada_2026-11-02_0100.dump
+docker compose start api
+
+# Files
+docker compose run --rm --no-deps -v /var/backups/pikidada/files:/backup --entrypoint /bin/sh minio-init -c   'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc mirror --overwrite /backup local/driver-documents'
+```
+If the server itself is lost, first copy the backups back from the Storage Box:
+`rsync -a -e "ssh -p 23" uXXXXXX@uXXXXXX.your-storagebox.de:pikidada/ /var/backups/pikidada/`
 
 ## Our own map display (optional switch)
 
