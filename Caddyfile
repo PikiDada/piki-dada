@@ -1,8 +1,22 @@
-# Caddy gets TLS certs automatically (Let's Encrypt) for each domain below the moment DNS
-# points at this server and ports 80/443 are reachable from the internet — no cert config
-# needed here.
+# Piki Dada's own router, inside the app (the `web` service in docker-compose.yml). The shared
+# server's front door (github.com/arihosolomon/hetzner-box) terminates HTTPS behind Cloudflare
+# and forwards every Piki Dada domain here as plain HTTP, so there are no certificates here.
 
-pikidada.com, www.pikidada.com {
+{
+	auto_https off
+	# Requests come from the front door, inside Docker's private network. Trusting it keeps
+	# the visitor's IP (X-Forwarded-For) and https (X-Forwarded-Proto) on the way to the API.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Container healthcheck (docker-compose.yml).
+http://127.0.0.1, http://localhost {
+	respond /healthz "ok" 200
+}
+
+http://pikidada.com, http://www.pikidada.com {
 	# The website is plain files built into this image (apps/web/Dockerfile).
 	root * /srv
 	encode zstd gzip
@@ -59,13 +73,12 @@ pikidada.com, www.pikidada.com {
 	}
 }
 
-api.pikidada.com {
+http://api.pikidada.com {
 	reverse_proxy api:4001
 }
 
 # Public read access for driver-document images the admin UI loads directly as <img src>
-# (see uploads.service.ts / MINIO_PUBLIC_URL). Requires a new DNS A record for this
-# subdomain pointed at the server, in addition to the two above.
-files.pikidada.com {
+# (see uploads.service.ts / MINIO_PUBLIC_URL). Needs its own DNS record (deploy/README.md).
+http://files.pikidada.com {
 	reverse_proxy minio:9000
 }

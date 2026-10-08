@@ -1,18 +1,18 @@
 # Deploying Piki Dada on Hetzner
 
-Everything that can be prepared from inside this repo is done: `docker-compose.yml`,
-`Caddyfile`, `.env.example` (root, for Compose) and `apps/api/.env.example` (for the API).
-The steps below need your Hetzner account, your domain's DNS, and hands-on-the-server
-access — none of that is something that can be done from here. Full context and rationale
-for each decision is in the approved migration plan; this is the condensed checklist.
+Piki Dada runs on a Hetzner server shared with the owner's other apps. The shared parts
+(HTTPS front door, Postgres, backups, deploy scripts) are in
+**github.com/arihosolomon/hetzner-box**, whose MOVING.md says when Piki Dada moves relative to
+the other apps. This guide is Piki Dada's part: `docker-compose.yml`, `Caddyfile`,
+`.env.example` (root, for Compose) and `apps/api/.env.example` (for the API).
 
 ## Start these early (they take days, not minutes)
 
 | What | Why it can't wait | Where |
 |---|---|---|
-| **Amazon SES production access** | New SES accounts can only email verified addresses until AWS approves production access, which can take a day or more. Without it, riders and passengers get no verification or receipt emails after the move | Phase 0 step 4 |
+| **Amazon SES production access** | New SES accounts can only email verified addresses until AWS approves production access, which can take a day or more. Without it, riders and passengers get no verification or receipt emails after the move | Phase 0 step 5 |
 | **Hetzner account** | New accounts are sometimes asked for ID verification before a server can be created | hetzner.com |
-| **Hetzner Storage Box** (BX11, the smallest, is plenty) | Off-server home for nightly backups. Supabase backed up for you; on Hetzner nothing does unless this is set up | "Backups and restoring" below |
+| **Hetzner Storage Box** (BX11, the smallest, is plenty) | Off-server home for nightly backups. Supabase backed up for you; on Hetzner nothing does unless this is set up | the box README ("Backups") |
 | **DNS on Cloudflare** | Every cutover step is a DNS change; on Cloudflare they take effect in minutes. Also fixes incoming email | Next section |
 | **Lower DNS TTLs** to 5 minutes, a day before the cutover | So the switch reaches everyone fast, and switching back is fast too | Cloudflare, on the `@`, `www` and `api` records |
 | **Payment webhooks** | Stripe and Flutterwave must call `https://api.pikidada.com/payments/webhooks/...`, not an `onrender.com` address, or payments stop confirming after the move | Stripe and Flutterwave dashboards |
@@ -68,102 +68,128 @@ pikidada.com is currently hosted by the cPanel provider (ns1/ns2.crystalcloudhos
    ```
 
    Add `include:amazonses.com` once Amazon SES sends the app's email (Hetzner, Phase 0
-   step 4), and drop SendGrid/Brevo from it when they're no longer used.
+   step 5), and drop SendGrid/Brevo from it when they're no longer used.
 5. **Test:** from another address, send to `support@pikidada.com` and confirm it arrives in
    Gmail. To reply *as* that address, add it in Gmail → Settings → Accounts → "Send mail as",
    using a sending service's SMTP login (Brevo or SendGrid now, SES later).
 
 From here on, every DNS change in this guide (Phase 2) happens in Cloudflare.
 
-## Phase 0 — Provision & prep
+## Phase 0 — The shared server and Piki Dada's place on it
 
-1. **Create the server**: Hetzner Cloud → new server, ~2 vCPU / 4GB RAM, Ubuntu 24.04 LTS,
-   in a region close to your users if offered (otherwise any EU region is fine).
-2. **Install Docker**: `curl -fsSL https://get.docker.com | sh` (includes the `docker compose`
-   plugin on modern Ubuntu).
-3. **Clone the repo onto the server** (e.g. to `/opt/pikidada`), then:
+Piki Dada shares one Hetzner server with the owner's other apps. The shared parts (the front
+door with HTTPS, Postgres, backups, deploy scripts) live in the box repo,
+**github.com/arihosolomon/hetzner-box**; this repo only holds what is Piki Dada's own.
+
+1. **Set up the server** following the box repo's README ("Setting up the server"), if it
+   isn't already. It includes the Storage Box for backups.
+2. **Cloudflare for pikidada.com:** set SSL/TLS mode to **Full (strict)**, then create an
+   **Origin Certificate** for `pikidada.com, *.pikidada.com` (SSL/TLS → Origin Server) and save
+   it on the server as `/srv/certs/pikidada.com.pem` and `/srv/certs/pikidada.com.key`. Leave the
+   DNS records as they are for now: the live site keeps running on Vercel and Render.
+3. **Register Piki Dada** (on the server, in /srv/box): `bin/add-app.sh pikidada`. It creates
+   the `pikidada` login with the `pikidada` and `pikidada_maps` databases (note the password it
+   prints), sets up the deploy key for this repo, and clones it to `/srv/apps/pikidada`.
+4. **Settings**, in `/srv/apps/pikidada`:
    ```sh
-   cp .env.example .env                     # fill in POSTGRES_*, MINIO_*, MAPS_PLATFORM_TOKEN, NEXT_PUBLIC_*
-   cp apps/api/.env.example apps/api/.env    # fill in every secret/key it lists
+   cp .env.example .env                     # PIKIDADA_DB_PASSWORD, MINIO_*, MAPS_PLATFORM_TOKEN, NEXT_PUBLIC_*
+   cp apps/api/.env.example apps/api/.env    # every secret/key it lists
    ```
-4. **Email is Amazon SES, not self-hosted** — do this independently of the server/DNS steps
-   below, since SES doesn't care which host your API runs on: verify `pikidada.com` in the SES
-   console (it gives you exact SPF/DKIM records — confirm they show "verified" there, don't
-   just assume), request production access, create SMTP credentials, fill in `SMTP_*` in
-   `apps/api/.env`. See that file's comments for the full rundown.
-5. **OSRM (self-hosted routing, optional but recommended)**: run the one-time data-prep
-   commands in `docker-compose.yml`'s comment on the `osrm` service. Nothing else to set:
-   the maps service talks to it, and the API talks to the maps service. Not required for
-   Phase 1/2 below — pricing falls back to Google Routes (or a straight-line estimate)
-   automatically until it's up, so it's fine to do this after cutover once the site is stable.
-6. **Maps platform** (`services/maps`, Go): needs only `MAPS_PLATFORM_TOKEN` in the root
-   `.env` (any long random string: `openssl rand -hex 32`). It creates its own `maps`
-   database on first start and starts learning from the first trip. See
-   `services/maps/README.md` for how it works.
+   In `apps/api/.env`: `DATABASE_URL` and `DIRECT_URL` are both
+   `postgresql://pikidada:<that password>@postgres:5432/pikidada`, and `MINIO_PUBLIC_URL` is
+   `https://files.pikidada.com`.
+5. **Email is Amazon SES, not self-hosted**: verify `pikidada.com` in the SES console (it
+   gives you exact SPF/DKIM records; confirm they show "verified" there), request production
+   access, create SMTP credentials, fill in `SMTP_*` in `apps/api/.env`. See that file's
+   comments for the full rundown.
+6. **OSRM (self-hosted routing):** run the one-time data-prep commands in
+   `docker-compose.yml`'s comment on the `osrm` service, from `/srv/apps/pikidada`. Not needed
+   for the move itself: pricing uses Google Routes first anyway, so this can wait until the
+   site is stable.
 
 ## Phase 1 — Dry run (still no impact on the live site)
 
-1. `docker compose up -d postgres minio` (bring up just the stateful services first).
-2. Restore a copy of production data to test against. `SUPABASE_DB_URL` is the
-   `DIRECT_URL` from the current API settings (Supabase's session pooler, port 5432). Only the
-   app's own tables (`public`) are copied: Supabase's internal parts (its auth, storage and
-   cron schemas) don't exist on plain Postgres and aren't used by the app. The dump runs in a
-   Postgres 17 container to match Supabase's version (17.6), and the restore stops at the
-   first error instead of carrying on with half the data:
+1. **Copy production data to test with.** `SUPABASE_DB_URL` is the `DIRECT_URL` from the
+   current API settings (Supabase's session pooler, port 5432). Only the app's own tables
+   (`public`) are copied: Supabase's internal parts (its auth, storage and cron schemas) don't
+   exist on plain Postgres and aren't used by the app. The dump runs in a Postgres 17
+   container to match Supabase's version (17.6), and the restore stops at the first error
+   instead of carrying on with half the data:
    ```sh
-   docker run --rm postgres:17-alpine pg_dump "$SUPABASE_DB_URL"        --schema=public --no-owner --no-privileges      | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"
+   docker run --rm postgres:17-alpine pg_dump "$SUPABASE_DB_URL" \
+       --schema=public --no-owner --no-privileges \
+     | docker exec -i postgres psql -v ON_ERROR_STOP=1 -U pikidada -d pikidada
    ```
-3. `docker compose up -d --build` (build and start `api`, `maps` and `caddy` too; the website
-   is built into the Caddy image as static files, so there's no separate web container).
-4. `docker compose exec api npx prisma migrate deploy` if migrations haven't run yet.
-5. Smoke test for real: register a fresh account, confirm the verification email actually
-   arrives (check spam), log in, take a test trip end-to-end, log into `/admin`, and upload a
-   rider document to check file storage works.
-6. **Test the backups now, not after something breaks**: run `deploy/backup.sh` once, check
-   the files arrived on the Storage Box, and do the restore drill in "Backups and restoring".
+2. **Start Piki Dada:** `/srv/box/bin/deploy.sh pikidada`. It builds the API, maps platform
+   and website, runs the database migrations, waits until everything is healthy, and reloads
+   the front door (Piki Dada's site file, `edge/sites/pikidada.caddy`, is already in the box
+   repo).
+3. **Test it before DNS changes**, from your computer, by pointing the domains at the server
+   for your machine only: add `<server IP> pikidada.com www.pikidada.com api.pikidada.com
+   files.pikidada.com` to your hosts file (Windows: `C:\Windows\System32\drivers\etc\hosts`).
+   The browser will warn about the certificate (an origin certificate is only trusted by
+   Cloudflare); accept it for the test. Register a fresh account, confirm the verification
+   email arrives (check spam), log in, take a test trip end to end, log into `/admin`, upload
+   a rider document. Remove the hosts lines afterwards.
+4. **Test the backups now, not after something breaks:** run `/srv/box/bin/backup.sh`, check
+   the files arrived on the Storage Box, and restore the `pikidada` database once as a drill
+   (box README, "Backups").
 
 ## Phase 2 — Cutover (the maintenance window)
 
-Pick a low-traffic time (late night, Kampala time).
+Pick the quietest hour (late night, Kampala time). Anything booked on the old system after
+step 1 isn't copied.
 
-1. Copy the final data. Anything booked on the old system after this point isn't copied,
-   which is why this runs at the quietest hour. Stop the new API, empty the dry-run data,
-   then restore exactly as in Phase 1 step 2, and note the time (the ping replay below needs
-   it):
+1. **Copy the final data.** Stop the new API, empty the dry-run data, restore exactly as in
+   Phase 1, and note the time (the ping replay below needs it):
    ```sh
-   docker compose stop api
-   docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"      -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-   # ...the pg_dump | psql command from Phase 1 step 2...
+   cd /srv/apps/pikidada && docker compose -p pikidada stop api
+   docker exec -i postgres psql -U pikidada -d pikidada -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+   # ...the pg_dump | psql command from Phase 1 step 1...
    date -u +%Y-%m-%dT%H:%M:%SZ
-   docker compose start api
+   docker compose -p pikidada start api
    ```
-2. **Move uploaded files off Supabase** — only after that final restore, since a later
-   restore would bring the old links back. `scripts/migrate-storage.ts` copies every file
-   from Supabase Storage into MinIO, then rewrites the database's file links to
-   `files.pikidada.com`. It only rewrites if every file copied, and is safe to re-run. See
-   the usage block at the top of the script; `DATABASE_URL` there must be the new
-   self-hosted Postgres.
-   **Replay the stored GPS pings into the maps platform** so it learns from every trip
-   since launch, not just from today. Use the time you took the final `pg_dump` (step 1)
-   as `REPLAY_BEFORE`: pings after that were sent live. Run it once. Neither Postgres nor
-   the maps service is exposed outside Docker, so run it on the compose network
-   (`docker network ls` shows its name, usually `<folder>_default`), after `set -a; . ./.env; set +a`
-   so the variables below are filled in:
-   ```bash
-   docker run --rm --network <folder>_default -v "$PWD":/app -w /app \
-     -e DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/pikidada" \
-     -e MAPS_PLATFORM_URL=http://maps:8080 -e MAPS_PLATFORM_TOKEN="$MAPS_PLATFORM_TOKEN" \
-     -e REPLAY_BEFORE=<final dump time, e.g. 2026-11-01T21:00:00Z> \
+2. **Move uploaded files off Supabase**, only after that final restore, since a later restore
+   would bring the old links back. `scripts/migrate-storage.ts` copies every file from
+   Supabase Storage into MinIO, then rewrites the database's file links to
+   `files.pikidada.com`. It only rewrites if every file copied, and is safe to re-run. It needs
+   both the database and MinIO, which sit on different private networks, so it runs in a
+   throwaway container joined to both (values as in the script's usage block; `DATABASE_URL`
+   is the new `postgres:5432` one):
+   ```sh
+   docker create --name oneoff --network db -v /srv/apps/pikidada:/app -w /app \
+     -e SUPABASE_URL=... -e SUPABASE_SERVICE_ROLE_KEY=... -e DATABASE_URL=... \
+     -e MINIO_ENDPOINT=http://minio:9000 -e MINIO_BUCKET=driver-documents \
+     -e MINIO_ACCESS_KEY=... -e MINIO_SECRET_KEY=... -e MINIO_PUBLIC_URL=https://files.pikidada.com \
+     node:22 sh -c "npm i --no-save @supabase/supabase-js @aws-sdk/client-s3 pg >/dev/null && npx -y tsx scripts/migrate-storage.ts"
+   docker network connect pikidada_default oneoff && docker start -a oneoff; docker rm oneoff
+   ```
+3. **Replay the stored GPS pings into the maps platform** so it learns from every trip since
+   launch. `REPLAY_BEFORE` is the time noted in step 1; pings after it were sent live. Run it
+   once, the same way:
+   ```sh
+   docker create --name oneoff --network db -v /srv/apps/pikidada:/app -w /app \
+     -e DATABASE_URL="postgresql://pikidada:<password>@postgres:5432/pikidada" \
+     -e MAPS_PLATFORM_URL=http://maps:8080 -e MAPS_PLATFORM_TOKEN=<from .env> \
+     -e REPLAY_BEFORE=<time from step 1> \
      node:22 sh -c "npm i --no-save pg >/dev/null && npx -y tsx scripts/replay-pings.ts"
+   docker network connect pikidada_default oneoff && docker start -a oneoff; docker rm oneoff
    ```
-3. Re-point DNS:
-   - `api.pikidada.com` → the Hetzner server's IP (currently a CNAME to piki-dada-api-xgen.onrender.com)
-   - `pikidada.com` and `www.pikidada.com` → the Hetzner server's IP (was Vercel)
-   - `files.pikidada.com` → the Hetzner server's IP (new record, for MinIO document previews)
-4. Wait for DNS to propagate, then confirm Caddy issued certificates for all four hostnames:
-   `docker compose logs caddy | grep -i certificate`
-5. Re-run the same smoke test as Phase 1, against the real domain this time, and open a
-   driver document in `/admin` to confirm it now loads from `files.pikidada.com`.
+4. **Point DNS at the server**, in Cloudflare, every record **proxied** (orange cloud), since the
+   front door expects requests through Cloudflare:
+   - `pikidada.com` and `www`: A record → the server's IP (was Vercel)
+   - `api`: A record → the server's IP (was a CNAME to piki-dada-api-xgen.onrender.com)
+   - `files`: A record → the server's IP (new)
+
+   Proxied records switch within about a minute.
+5. **Re-run the Phase 1 smoke test** against the real domain, without the hosts-file lines, and
+   open a rider document in `/admin` to confirm it loads from `files.pikidada.com`.
+
+**If something goes wrong:** point the records back at Vercel (`A 216.198.79.1` for `@`,
+`CNAME 33b12cfc90f84edd.vercel-dns-017.com` for `www`) and Render (`api` CNAME
+`piki-dada-api-xgen.onrender.com`), grey cloud, and the old system is live again within
+minutes. Bookings made on the new server in between would need copying back by hand, so
+decide quickly.
 
 ## Phase 3 — Decommission (after a few stable days)
 
@@ -176,7 +202,7 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
 - Let the SendGrid trial lapse (no action needed) or delete the account.
 - Keep the Supabase project paused (not deleted) for a short rollback window, then delete it.
   Before deleting, confirm no file links still point at it (expect 0):
-  `docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "SELECT count(*) FROM \"Document\" WHERE \"fileUrl\" LIKE '%supabase.co%'"`
+  `docker exec postgres psql -U pikidada -d pikidada -c "SELECT count(*) FROM \"Document\" WHERE \"fileUrl\" LIKE '%supabase.co%'"`
 - Close the Cloudinary account: nothing in the database links to it (checked 6 Oct 2026; all
   documents were on Supabase Storage, which step 2 of the cutover moves to MinIO).
 - Remove `*.supabase.co` and `res.cloudinary.com` from the image sources in the Caddyfile's
@@ -184,47 +210,20 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
 
 ## Ongoing
 
-- Backups run nightly from cron; see "Backups and restoring" below.
-- `docker compose logs -f` / `docker compose ps` are your new Render dashboard.
-- **Memory**: each service has a `mem_limit` in `docker-compose.yml`, sized for a 4 GB
-  server (about 2.9 GB in total). After a week of real traffic, check actual usage with
-  `docker stats --no-stream` and adjust; OSRM's figure is the least certain until measured.
-  If everything sits well under its limit, a smaller server may be enough.
+- **Deploy** the latest `main`: `/srv/box/bin/deploy.sh pikidada`.
+- **Logs and status:** `docker compose -p pikidada logs -f --tail 100` and
+  `docker compose -p pikidada ps` (from `/srv/apps/pikidada`) are the new Render dashboard.
+- **Backups** are the box's nightly job: Piki Dada's two databases, its uploaded files (the
+  `pikidada_minio_data` volume) and its settings files, in `/srv/backups/pikidada/` and on the
+  Storage Box. Restoring is in the box README.
+- **Memory:** Piki Dada's containers are allowed about 2.4 GB in total, 1.5 GB of it for
+  OSRM, within the server's budget in the box README. After a week of real traffic, compare
+  with `docker stats --no-stream`.
 - **Is the maps platform learning?**
-  `docker compose exec api node -e "fetch('http://maps:8080/v1/stats',{headers:{Authorization:'Bearer '+process.env.MAPS_PLATFORM_TOKEN}}).then(r=>r.json()).then(console.log)"`
+  `docker compose -p pikidada exec api node -e "fetch('http://maps:8080/v1/stats',{headers:{Authorization:'Bearer '+process.env.MAPS_PLATFORM_TOKEN}}).then(r=>r.json()).then(console.log)"`
   shows journeys learned, road segments with observed speeds, and how many of those OSRM
   now routes with. The OSRM container applies newly learned speeds every night at 03:00
-  Kampala time (`docker compose logs osrm`).
-- `ufw allow 80,443,22/tcp && ufw enable` (or equivalent) so nothing but SSH and the reverse
-  proxy is reachable from the internet.
-
-## Backups and restoring
-
-`deploy/backup.sh` copies, every night, everything that can't be rebuilt: the app's database,
-the maps platform's database (what it has learned about Kampala), and every uploaded file. It
-keeps 14 days on the server and copies everything to the Storage Box.
-
-**Set up (once):**
-1. Order a Hetzner Storage Box and turn on SSH support in its settings.
-2. On the server: `ssh-keygen -t ed25519` (no passphrase), then install the key on the box:
-   `cat ~/.ssh/id_ed25519.pub | ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de install-ssh-key`
-3. In the root `.env`: `BACKUP_REMOTE="uXXXXXX@uXXXXXX.your-storagebox.de:pikidada"`, and
-   create that folder: `ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de mkdir pikidada`.
-4. `crontab -e` and add: `0 1 * * * /opt/pikidada/deploy/backup.sh >> /var/log/pikidada-backup.log 2>&1`
-5. Run it once by hand and check it ends with "copied to ...".
-
-**Restore drill** (do it once in the dry run; it's also the real procedure):
-```sh
-# Database (replace the file name with the dump you want; pikidada_* is the app, maps_* the maps platform)
-docker compose stop api
-docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists   < /var/backups/pikidada/db/pikidada_2026-11-02_0100.dump
-docker compose start api
-
-# Files
-docker compose run --rm --no-deps -v /var/backups/pikidada/files:/backup --entrypoint /bin/sh minio-init -c   'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc mirror --overwrite /backup local/driver-documents'
-```
-If the server itself is lost, first copy the backups back from the Storage Box:
-`rsync -a -e "ssh -p 23" uXXXXXX@uXXXXXX.your-storagebox.de:pikidada/ /var/backups/pikidada/`
+  Kampala time (`docker compose -p pikidada logs osrm`).
 
 ## Our own map display (optional switch)
 
@@ -246,7 +245,7 @@ search (Google Places) and pricing are unaffected either way.
    `https://pikidada.com/tiles/uganda.pmtiles`; no restart needed. Check with
    `curl -sI -H 'Range: bytes=0-99' https://pikidada.com/tiles/uganda.pmtiles` (expect `206`).
 3. **Turn it on** in the root `.env` and rebuild the website:
-   `NEXT_PUBLIC_MAP_PROVIDER="osm"`, then `docker compose up -d --build caddy`.
+   `NEXT_PUBLIC_MAP_PROVIDER="osm"` in `/srv/apps/pikidada/.env`, then `/srv/box/bin/deploy.sh pikidada`.
    `NEXT_PUBLIC_MAP_TILES_URL` defaults to `/tiles/uganda.pmtiles` on the same site; the map's
    fonts and icons (`NEXT_PUBLIC_MAP_GLYPHS_URL`, `NEXT_PUBLIC_MAP_SPRITE_URL`) default to
    Protomaps' public copies on GitHub Pages. All four are described in `apps/web/.env.example`.
@@ -254,4 +253,4 @@ search (Google Places) and pricing are unaffected either way.
    `uganda-2027-01.pmtiles`), point `NEXT_PUBLIC_MAP_TILES_URL` at it and rebuild: browsers
    cache tiles for a week, and a file replaced in place would mix old and new pieces.
 5. **To switch back**, empty `NEXT_PUBLIC_MAP_PROVIDER` (or set it to `"google"`) and run
-   `docker compose up -d --build caddy` again. The map file can stay where it is.
+   `/srv/box/bin/deploy.sh pikidada` again. The map file can stay where it is.

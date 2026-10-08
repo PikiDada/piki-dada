@@ -1,31 +1,10 @@
-services:
-  postgres:
-    # Same major version as the Supabase database it is restored from (17.6 on 8 Oct 2026):
-    # a dump from a newer Postgres doesn't reliably restore into an older one.
-    image: postgres:17-alpine
-    restart: unless-stopped
-    # Sized for a small server shared with the rest of the stack. Holds two databases: the
-    # app's (POSTGRES_DB) and the maps platform's own (`maps`, created by that service).
-    command: >
-      postgres
-      -c shared_buffers=128MB
-      -c effective_cache_size=512MB
-      -c work_mem=4MB
-      -c maintenance_work_mem=64MB
-      -c max_connections=40
-    mem_limit: 512m
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-pikidada}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# Piki Dada on the shared server (github.com/arihosolomon/hetzner-box): the front door
+# (HTTPS) and Postgres are shared and live there, not here. This file is everything that is
+# Piki Dada's own. Deployed with `bin/deploy.sh pikidada` from the box repo, which runs
+# `docker compose -p pikidada up -d --build --wait`. See deploy/README.md.
+name: pikidada
 
+services:
   minio:
     image: minio/minio:latest
     restart: unless-stopped
@@ -118,19 +97,20 @@ services:
       context: services/maps
     restart: unless-stopped
     mem_limit: 128m
+    # Its database (pikidada_maps) and the login are created by the box's bin/add-app.sh.
     environment:
       PGHOST: postgres
-      PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: maps
+      PGUSER: pikidada
+      PGPASSWORD: ${PIKIDADA_DB_PASSWORD:?set PIKIDADA_DB_PASSWORD in .env}
+      PGDATABASE: pikidada_maps
       PGSSLMODE: disable
       OSRM_URL: http://osrm:5000
       API_TOKEN: ${MAPS_PLATFORM_TOKEN:?set MAPS_PLATFORM_TOKEN in .env}
     volumes:
       - osrm_traffic:/traffic
-    depends_on:
-      postgres:
-        condition: service_healthy
+    networks:
+      - default
+      - db
     healthcheck:
       test: ["CMD", "/mapsd", "healthcheck"]
       interval: 15s
@@ -153,9 +133,11 @@ services:
       # Caps the JS heap below the container limit, so Node collects garbage instead of
       # growing until the container is killed.
       NODE_OPTIONS: --max-old-space-size=256
+    # DATABASE_URL in apps/api/.env points at postgres:5432 on the shared `db` network.
+    networks:
+      - default
+      - db
     depends_on:
-      postgres:
-        condition: service_healthy
       minio:
         condition: service_healthy
     healthcheck:
@@ -165,9 +147,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Serves the website too: apps/web/Dockerfile builds the site as plain files into this
-  # Caddy image, so there's no separate web container or Node process for it.
-  caddy:
+  # The one service facing the internet (the box's front door sends every Piki Dada domain
+  # here, over the `edge` network, as plain HTTP). Its Caddyfile serves the website, built as
+  # plain files into this image (apps/web/Dockerfile), and routes api. and files. to the API
+  # and MinIO.
+  web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -180,25 +164,35 @@ services:
         NEXT_PUBLIC_MAP_GLYPHS_URL: ${NEXT_PUBLIC_MAP_GLYPHS_URL:-}
         NEXT_PUBLIC_MAP_SPRITE_URL: ${NEXT_PUBLIC_MAP_SPRITE_URL:-}
     restart: unless-stopped
-    mem_limit: 128m
-    ports:
-      - "80:80"
-      - "443:443"
+    mem_limit: 64m
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Map tiles (.pmtiles) for our own map display, served at /tiles/*; see the Caddyfile
       # and deploy/README.md. Empty unless you've put a file there.
       - ./data/tiles:/srv/tiles:ro
-      - caddy_data:/data
-      - caddy_config:/config
+    networks:
+      default:
+      edge:
+        aliases:
+          - pikidada
     depends_on:
       - api
       - minio
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  postgres_data:
   minio_data:
   osrm_data:
   osrm_traffic:
-  caddy_data:
-  caddy_config:
+
+networks:
+  default:
+  # Shared, created by the box's bin/setup-server.sh.
+  edge:
+    external: true
+  db:
+    external: true
