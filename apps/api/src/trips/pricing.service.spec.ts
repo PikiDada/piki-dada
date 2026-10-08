@@ -56,7 +56,7 @@ const destination = { lat: 0.3621, lng: 32.6193 };
 describe('PricingService with stops', () => {
   afterEach(() => jest.clearAllMocks());
 
-  it('prices with Google first, even when the maps platform is running', async () => {
+  it('prices with Google and keeps the maps platform answer as a shadow quote', async () => {
     mockedAxios.post.mockResolvedValue({
       data: { routes: [{ distanceMeters: 9000, duration: '1200s' }] },
     });
@@ -72,7 +72,21 @@ describe('PricingService with stops', () => {
     );
 
     expect(estimate.distanceKm).toBe(9);
-    expect(maps.route.mock.calls).toHaveLength(0);
+    expect(estimate.routeSource).toBe('GOOGLE');
+    expect(maps.route).toHaveBeenCalledWith([pickup, destination]);
+    expect(estimate.mapsDistanceKm).toBe(12);
+    expect(estimate.mapsDurationMin).toBe(25);
+  });
+
+  it('says when the fare came from the straight-line fallback', async () => {
+    const { service } = makeService();
+    const estimate = await service.estimateFare(
+      RideType.BODA,
+      pickup,
+      destination,
+    );
+    expect(estimate.routeSource).toBe('STRAIGHT_LINE');
+    expect(estimate.mapsDistanceKm).toBeNull();
   });
 
   it('falls back to the maps platform, with the whole route in visiting order', async () => {
@@ -92,6 +106,7 @@ describe('PricingService with stops', () => {
     expect(mockedAxios.post.mock.calls).toHaveLength(0);
     expect(estimate.distanceKm).toBe(12);
     expect(estimate.durationMin).toBe(25);
+    expect(estimate.routeSource).toBe('MAPS_PLATFORM');
   });
 
   it('passes stops to Google Routes as intermediates', async () => {

@@ -115,6 +115,19 @@ Pick a low-traffic time (late night, Kampala time).
    `files.pikidada.com`. It only rewrites if every file copied, and is safe to re-run. See
    the usage block at the top of the script; `DATABASE_URL` there must be the new
    self-hosted Postgres.
+   **Replay the stored GPS pings into the maps platform** so it learns from every trip
+   since launch, not just from today. Use the time you took the final `pg_dump` (step 1)
+   as `REPLAY_BEFORE`: pings after that were sent live. Run it once. Neither Postgres nor
+   the maps service is exposed outside Docker, so run it on the compose network
+   (`docker network ls` shows its name, usually `<folder>_default`), after `set -a; . ./.env; set +a`
+   so the variables below are filled in:
+   ```bash
+   docker run --rm --network <folder>_default -v "$PWD":/app -w /app \
+     -e DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/pikidada" \
+     -e MAPS_PLATFORM_URL=http://maps:8080 -e MAPS_PLATFORM_TOKEN="$MAPS_PLATFORM_TOKEN" \
+     -e REPLAY_BEFORE=<final dump time, e.g. 2026-11-01T21:00:00Z> \
+     node:22 sh -c "npm i --no-save pg >/dev/null && npx -y tsx scripts/replay-pings.ts"
+   ```
 3. Re-point DNS:
    - `api.pikidada.com` → the Hetzner server's IP (currently a CNAME to piki-dada-api-xgen.onrender.com)
    - `pikidada.com` and `www.pikidada.com` → the Hetzner server's IP (was Vercel)

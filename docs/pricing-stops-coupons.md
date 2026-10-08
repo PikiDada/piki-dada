@@ -22,7 +22,15 @@ The route covers pickup → each stop in order → destination. The API tries, i
 2. **The Piki Dada maps platform** (`services/maps`), if Google doesn't answer.
 3. **Straight line × the road distance factor** (1.3 by default), with duration from the **average speed** setting (28 km/h by default).
 
-Google stays primary on purpose. The maps platform is learning from every completed trip in the meantime, and about a year in we compare its fares against Google's to decide whether it's good enough to take over.
+Google stays primary on purpose. About a year after the Hetzner move we compare the maps platform against Google to decide whether it's good enough to take over. The data for that comparison is collected on every trip and delivery from now on:
+
+| Stored on each trip / delivery | What it is |
+|---|---|
+| `distanceKm`, `durationMin`, `routeSource` | The estimate that priced it, and where it came from (Google, maps platform or straight line). Only Google-priced trips count in the comparison |
+| `mapsDistanceKm`, `mapsDurationMin` | What the maps platform answered for the same route at the same moment ("shadow quote"). Empty until it runs on Hetzner |
+| `actualDistanceKm`, `actualDurationMin` | What really happened, from the rider's GPS: pickup to destination for rides, pickup to the final drop-off for deliveries. Time spent waiting at stops is left out, as the estimates leave it out |
+
+The raw GPS points are kept too, so a better measure can be recomputed later. Trips with stops that were never reached should be left out of the comparison, because their estimate covered a longer route than was driven.
 
 ## 2. Stops
 

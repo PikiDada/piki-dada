@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { RideType } from '@prisma/client';
+import { RideType, RouteSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
 import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
@@ -11,6 +11,16 @@ import { PricingSettingsService } from '../pricing-settings/pricing-settings.ser
 // PricingSettings for the rest. Nothing pricing-related is hard-coded.
 
 const EARTH_RADIUS_KM = 6371;
+
+export function haversineKm(a: LatLng, b: LatLng): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const sinLat = Math.sin(toRad(b.lat - a.lat) / 2);
+  const sinLng = Math.sin(toRad(b.lng - a.lng) / 2);
+  const c =
+    sinLat * sinLat +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
+  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
+}
 const ROUTES_API_TIMEOUT_MS = 4000;
 
 export interface LatLng {
@@ -76,18 +86,7 @@ export class PricingService {
   }
 
   haversineDistanceKm(a: LatLng, b: LatLng): number {
-    const dLat = this.toRad(b.lat - a.lat);
-    const dLng = this.toRad(b.lng - a.lng);
-    const lat1 = this.toRad(a.lat);
-    const lat2 = this.toRad(b.lat);
-    const sin1 = Math.sin(dLat / 2);
-    const sin2 = Math.sin(dLng / 2);
-    const c = sin1 * sin1 + Math.cos(lat1) * Math.cos(lat2) * sin2 * sin2;
-    return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
-  }
-
-  private toRad(deg: number) {
-    return (deg * Math.PI) / 180;
+    return haversineKm(a, b);
   }
 
   // averageSpeedKmh comes from settings(); callers fetch it once for a whole batch of riders.
@@ -95,19 +94,43 @@ export class PricingService {
     return Math.round((distanceKm / averageSpeedKmh) * 60);
   }
 
-  // Road distance and duration for the route, or the admin-tuned straight-line estimate when
-  // no routing service answers.
+  // Road distance and duration for the route, in this order: Google Routes (if
+  // GOOGLE_ROUTES_API_KEY is configured), the maps platform (self-hosted OSRM tuned by speeds
+  // learned from real trips; if MAPS_PLATFORM_URL is configured), then the admin-tuned
+  // straight-line estimate. No layer ever throws: a routing outage never blocks a booking, it
+  // just prices a bit less precisely. `points` is the whole route in visiting order.
+  //
+  // Google prices the fares on purpose while the maps platform learns, until a planned
+  // evaluation about a year in. That evaluation needs both answers for the same trip at the
+  // same moment, so the maps platform is always asked too (in parallel, so it adds no wait) and
+  // its answer is returned as a shadow quote alongside which source was used.
   private async routeOrEstimate(points: LatLng[]) {
-    const [road, settings] = await Promise.all([
-      this.computeRoadRoute(points),
+    const [google, maps, settings] = await Promise.all([
+      this.computeGoogleRoute(points),
+      this.maps.route(points),
       this.pricingSettings.get(),
     ]);
+    const road = google ?? maps;
+    const routeSource: RouteSource = google
+      ? RouteSource.GOOGLE
+      : maps
+        ? RouteSource.MAPS_PLATFORM
+        : RouteSource.STRAIGHT_LINE;
     const distanceKm =
       road?.distanceKm ??
       this.straightLineKm(points) * settings.roadDistanceFallbackFactor;
     const durationMin =
       road?.durationMin ?? (distanceKm / settings.averageSpeedKmh) * 60;
-    return { distanceKm, durationMin, settings };
+    return {
+      distanceKm,
+      durationMin,
+      settings,
+      route: {
+        routeSource,
+        mapsDistanceKm: maps ? Number(maps.distanceKm.toFixed(2)) : null,
+        mapsDurationMin: maps ? Number(maps.durationMin.toFixed(1)) : null,
+      },
+    };
   }
 
   // Sum of straight lines between consecutive points, so stops count toward the estimate too.
@@ -117,21 +140,6 @@ export class PricingService {
       total += this.haversineDistanceKm(points[i - 1], points[i]);
     }
     return total;
-  }
-
-  // Three-layer fallback: Google Routes API (if GOOGLE_ROUTES_API_KEY is configured) -> the
-  // maps platform (self-hosted OSRM tuned by speeds learned from real trips; if
-  // MAPS_PLATFORM_URL is configured) -> straight-line estimate in the caller.
-  //
-  // Google comes first on purpose: it prices the fares while the maps platform learns from
-  // every trip in the background, until a planned evaluation (about a year in) shows the
-  // platform is good enough to take over. Each layer never throws -- a routing outage never
-  // blocks a passenger from booking, it just prices a bit less precisely. `points` is the
-  // whole route in visiting order: pickup, any stops, destination.
-  private async computeRoadRoute(points: LatLng[]): Promise<RoadRoute | null> {
-    const google = await this.computeGoogleRoute(points);
-    if (google) return google;
-    return this.maps.enabled ? this.maps.route(points) : null;
   }
 
   // Real road distance/duration via Google's Routes API. Returns null (never
@@ -253,10 +261,11 @@ export class PricingService {
     destination: LatLng,
     stops: LatLng[] = [],
   ) {
-    const [{ distanceKm, durationMin, settings }, rule] = await Promise.all([
-      this.routeOrEstimate([pickup, ...stops, destination]),
-      this.rideRule(rideType),
-    ]);
+    const [{ distanceKm, durationMin, settings, route }, rule] =
+      await Promise.all([
+        this.routeOrEstimate([pickup, ...stops, destination]),
+        this.rideRule(rideType),
+      ]);
 
     const fare =
       rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
@@ -269,6 +278,8 @@ export class PricingService {
       currency: rule.currency,
       waitingPerMinute: rule.waitingPerMinute,
       freeWaitMinutes: rule.freeWaitMinutes,
+      // Stored on the trip/delivery for the Google-vs-maps-platform evaluation.
+      ...route,
     };
   }
 
@@ -333,7 +344,7 @@ export class PricingService {
     destination: LatLng,
     stops: LatLng[] = [],
   ) {
-    const [{ distanceKm, durationMin, settings }, rule, surchargeRules] =
+    const [{ distanceKm, durationMin, settings, route }, rule, surchargeRules] =
       await Promise.all([
         this.routeOrEstimate([pickup, ...stops, destination]),
         this.deliveryRule(sizeTierId),
@@ -364,6 +375,8 @@ export class PricingService {
       currency: rule.currency,
       waitingPerMinute: rule.waitingPerMinute,
       freeWaitMinutes: rule.freeWaitMinutes,
+      // Stored on the trip/delivery for the Google-vs-maps-platform evaluation.
+      ...route,
     };
   }
 

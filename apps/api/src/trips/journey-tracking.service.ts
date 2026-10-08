@@ -12,8 +12,10 @@ import {
 // Map-matching works well at a few seconds between points; denser than that only adds rows.
 const MIN_PING_INTERVAL_MS = 3000;
 
-// The drive to pickup is real road travel too, so the maps platform gets it; only the billed
-// part of a ride (IN_PROGRESS) goes into TripLocationPing for actual-vs-estimate fares.
+// The drive to pickup is real road travel too, so the maps platform gets it. Our own database
+// always keeps the billed part (a ride IN_PROGRESS, a delivery PICKED_UP) for actual-vs-estimate
+// comparisons. The rest is kept only while the maps platform isn't running to receive it, so
+// scripts/replay-pings.ts can hand it over later instead of that learning being lost.
 const TRIP_TRACKED_STATUSES: TripStatus[] = [
   TripStatus.ACCEPTED,
   TripStatus.ARRIVED,
@@ -59,9 +61,16 @@ export class JourneyTrackingService {
         TRIP_TRACKED_STATUSES.includes(trip.status) &&
         this.due(journeyId, now)
       ) {
-        if (trip.status === TripStatus.IN_PROGRESS) {
+        const billed = trip.status === TripStatus.IN_PROGRESS;
+        if (billed || !this.maps.enabled) {
           await this.prisma.tripLocationPing.create({
-            data: { tripId: ref.tripId, lat: location.lat, lng: location.lng },
+            data: {
+              tripId: ref.tripId,
+              lat: location.lat,
+              lng: location.lng,
+              billed,
+              recordedAt: now,
+            },
           });
         }
         this.maps.recordPing(journeyId, location, now);
@@ -80,6 +89,18 @@ export class JourneyTrackingService {
         DELIVERY_TRACKED_STATUSES.includes(delivery.status) &&
         this.due(journeyId, now)
       ) {
+        const billed = delivery.status === DeliveryStatus.PICKED_UP;
+        if (billed || !this.maps.enabled) {
+          await this.prisma.deliveryLocationPing.create({
+            data: {
+              deliveryId: ref.deliveryId,
+              lat: location.lat,
+              lng: location.lng,
+              billed,
+              recordedAt: now,
+            },
+          });
+        }
         this.maps.recordPing(journeyId, location, now);
       }
       return true;

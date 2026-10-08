@@ -21,6 +21,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { decryptUserPhone } from '../common/field-encryption';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
 import { applyCoupon, CouponsService } from '../coupons/coupons.service';
+import { measureActualRoute } from '../trips/actual-route';
 
 // Deliveries always match BODA-vehicle riders -- there's no rideType choice in the delivery
 // request itself, unlike ride booking.
@@ -98,6 +99,9 @@ export class DeliveriesService {
           cashOnDeliveryAmount: dto.cashOnDeliveryAmount,
           distanceKm: estimate.distanceKm,
           durationMin: estimate.durationMin,
+          routeSource: estimate.routeSource,
+          mapsDistanceKm: estimate.mapsDistanceKm,
+          mapsDurationMin: estimate.mapsDurationMin,
           fare: estimate.fare,
           currency: estimate.currency,
           paymentMethod: dto.paymentMethod,
@@ -252,6 +256,7 @@ export class DeliveriesService {
         delivery.status === DeliveryStatus.DELIVERED
           ? (delivery.fare ?? 0)
           : await this.finalizeFare(delivery, now);
+      await this.recordActualRoute(delivery, now);
 
       // Payment always starts PENDING, even for CASH — see TripsService.updateStatus's
       // matching comment for why.
@@ -285,6 +290,32 @@ export class DeliveriesService {
         : SOCKET_EVENTS.DELIVERY_STATUS_UPDATED,
     );
     return updated;
+  }
+
+  // Same as TripsService.recordActualRoute, over the part the sender pays for: from pickup to
+  // arriving at the final drop-off (not the handover there). Every drop-off stop has been
+  // departed by then, so the loaded stops are final.
+  private async recordActualRoute(
+    delivery: Prisma.DeliveryGetPayload<{ include: { stops: true } }>,
+    deliveredAt: Date,
+  ) {
+    const pings = await this.prisma.deliveryLocationPing.findMany({
+      where: { deliveryId: delivery.id, billed: true },
+      orderBy: { recordedAt: 'asc' },
+    });
+    const actual = measureActualRoute(
+      pings,
+      delivery.pickedUpAt,
+      delivery.arrivedDropoffAt ?? deliveredAt,
+      delivery.stops,
+    );
+    if (actual.actualDistanceKm === null && actual.actualDurationMin === null) {
+      return;
+    }
+    await this.prisma.delivery.update({
+      where: { id: delivery.id },
+      data: actual,
+    });
   }
 
   // Same as TripsService.finalizeFare, minus the skipped-stops step: a delivery can't reach
@@ -377,6 +408,9 @@ export class DeliveriesService {
           discount: priced.discount,
           distanceKm: estimate.distanceKm,
           durationMin: estimate.durationMin,
+          routeSource: estimate.routeSource,
+          mapsDistanceKm: estimate.mapsDistanceKm,
+          mapsDurationMin: estimate.mapsDurationMin,
         },
       }),
     ]);

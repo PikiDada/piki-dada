@@ -23,6 +23,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { decryptUserPhone } from '../common/field-encryption';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
+import { measureActualRoute } from './actual-route';
 import { applyCoupon, CouponsService } from '../coupons/coupons.service';
 
 const SEARCH_RADIUS_KM = 6;
@@ -88,6 +89,9 @@ export class TripsService {
           destinationLng: dto.destinationLng,
           distanceKm: estimate.distanceKm,
           durationMin: estimate.durationMin,
+          routeSource: estimate.routeSource,
+          mapsDistanceKm: estimate.mapsDistanceKm,
+          mapsDurationMin: estimate.mapsDurationMin,
           fare: estimate.fare,
           currency: estimate.currency,
           paymentMethod: dto.paymentMethod,
@@ -231,12 +235,12 @@ export class TripsService {
     }
 
     if (dto.status === TripStatus.COMPLETED) {
-      await this.recordActualRoute(tripId, trip.startedAt, now);
-
       const finalFare =
         trip.status === TripStatus.COMPLETED
           ? (trip.fare ?? 0)
           : await this.finalizeFare(trip, now);
+      // After finalizeFare, which closes any stop still being waited at.
+      await this.recordActualRoute(tripId, trip.startedAt, now);
 
       // Payment always starts PENDING, even for CASH: the driver wallet is only credited once
       // the payment is actually confirmed (passenger cash confirmation, or a payment webhook),
@@ -406,6 +410,9 @@ export class TripsService {
           discount: priced.discount,
           distanceKm: estimate.distanceKm,
           durationMin: estimate.durationMin,
+          routeSource: estimate.routeSource,
+          mapsDistanceKm: estimate.mapsDistanceKm,
+          mapsDurationMin: estimate.mapsDurationMin,
         },
       }),
     ]);
@@ -542,41 +549,26 @@ export class TripsService {
     };
   }
 
-  // Turns the raw GPS trace (see TripLocationPing's schema comment) into the actual
-  // distance/duration the trip took, so it can be compared against the pre-trip estimate
-  // already stored on the trip. Summing consecutive-ping distances is a cruder measure of
-  // distance than snapping the trace to actual roads (map-matching), but it needs no extra
-  // infrastructure and is still a real signal -- good enough to start measuring the gap with.
-  // Left null if too few pings came in to say anything (e.g. the driver app was backgrounded).
+  // What the trip actually took, from its billed GPS trace (see actual-route.ts), stored beside
+  // the estimates for the Google-vs-maps-platform evaluation. Left null when too few pings came
+  // in to say anything (e.g. the driver app was backgrounded).
   private async recordActualRoute(
     tripId: string,
     startedAt: Date | null,
     completedAt: Date,
   ) {
-    const pings = await this.prisma.tripLocationPing.findMany({
-      where: { tripId },
-      orderBy: { recordedAt: 'asc' },
-    });
-
-    let actualDistanceKm: number | null = null;
-    if (pings.length >= 2) {
-      actualDistanceKm = 0;
-      for (let i = 1; i < pings.length; i++) {
-        actualDistanceKm += this.pricing.haversineDistanceKm(
-          { lat: pings[i - 1].lat, lng: pings[i - 1].lng },
-          { lat: pings[i].lat, lng: pings[i].lng },
-        );
-      }
+    const [pings, stops] = await Promise.all([
+      this.prisma.tripLocationPing.findMany({
+        where: { tripId, billed: true },
+        orderBy: { recordedAt: 'asc' },
+      }),
+      this.prisma.tripStop.findMany({ where: { tripId } }),
+    ]);
+    const actual = measureActualRoute(pings, startedAt, completedAt, stops);
+    if (actual.actualDistanceKm === null && actual.actualDurationMin === null) {
+      return;
     }
-    const actualDurationMin = startedAt
-      ? (completedAt.getTime() - startedAt.getTime()) / 60000
-      : null;
-
-    if (actualDistanceKm === null && actualDurationMin === null) return;
-    await this.prisma.trip.update({
-      where: { id: tripId },
-      data: { actualDistanceKm, actualDurationMin },
-    });
+    await this.prisma.trip.update({ where: { id: tripId }, data: actual });
   }
 
   private timestampFieldFor(status: TripStatus): string | null {
