@@ -59,3 +59,21 @@ jobs:
       - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
       - run: go test ./...
+
+  # The Hetzner stack: proves the three images build and the Caddyfile parses, so the first
+  # time they're built isn't on the server during the move.
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      MINIO_ROOT_USER: ci
+      MINIO_ROOT_PASSWORD: ci-password
+      MAPS_PLATFORM_TOKEN: ci
+      NEXT_PUBLIC_API_URL: https://api.pikidada.com
+    steps:
+      - uses: actions/checkout@v4
+      - run: touch apps/api/.env
+      - run: docker compose config --quiet
+      - run: docker compose build api maps caddy
+      - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
