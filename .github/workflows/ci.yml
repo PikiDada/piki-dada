@@ -12,7 +12,7 @@ jobs:
   api:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -30,7 +30,7 @@ jobs:
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -51,7 +51,7 @@ jobs:
       run:
         working-directory: services/maps
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: services/maps/go.mod
@@ -72,7 +72,7 @@ jobs:
       MAPS_PLATFORM_TOKEN: ci
       NEXT_PUBLIC_API_URL: https://api.pikidada.com
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: touch apps/api/.env
       - run: docker compose config --quiet
       - run: docker compose build api maps caddy
