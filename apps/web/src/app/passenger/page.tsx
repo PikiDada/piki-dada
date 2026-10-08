@@ -19,6 +19,7 @@ import {
 import { stopsPayload, stopsReady, waitingPolicyText, type StopDraft } from "@/lib/stops";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
 import { StopListEditor } from "@/components/trip/stop-list-editor";
+import { CouponInput } from "@/components/trip/coupon-input";
 
 export default function PassengerBookingPage() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export default function PassengerBookingPage() {
   const [destinationAddress, setDestinationAddress] = useState("");
   const [destination, setDestination] = useState<LatLng | undefined>();
   const [stops, setStops] = useState<StopDraft[]>([]);
+  const [couponCode, setCouponCode] = useState<string | null>(null);
   const rideType: RideType = "BODA";
   const [waitingPolicy, setWaitingPolicy] = useState<WaitingPolicy | null>(null);
 
@@ -77,6 +79,7 @@ export default function PassengerBookingPage() {
           destinationLng: destination.lng,
           destinationAddress,
           stops: stopsPayload(stops, false),
+          couponCode: couponCode ?? undefined,
           rideType,
           paymentMethod: "CASH",
         }),
@@ -161,6 +164,8 @@ export default function PassengerBookingPage() {
               setDestination(location);
             }}
           />
+
+          <CouponInput onChange={setCouponCode} />
 
           {/* A labelled row, not a centred box -- it reads as a setting you could
               one day change rather than a stray notice. */}

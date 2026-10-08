@@ -176,6 +176,12 @@ function DriverDeliveryView({ id }: { id: string }) {
               drop-offs
             </p>
           )}
+          {!!delivery.discount && (
+            <p className="text-sm text-green-700">
+              The sender used a coupon and pays {delivery.discount.toLocaleString()} {delivery.currency} less.
+              Piki Dada pays you that difference, so your earnings are unchanged.
+            </p>
+          )}
 
           <div className="rounded-xl bg-neutral-50 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">

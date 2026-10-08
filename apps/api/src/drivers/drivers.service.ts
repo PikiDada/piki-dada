@@ -109,7 +109,7 @@ export class DriversService {
       where: { id: driverId },
       data: { approvalStatus: status },
     });
-    this.notifications.notifyUser(
+    void this.notifications.notifyUser(
       driver.userId,
       status === DriverApprovalStatus.APPROVED
         ? 'Application approved'

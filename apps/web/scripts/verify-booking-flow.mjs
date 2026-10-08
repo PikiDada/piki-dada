@@ -21,15 +21,6 @@ page.on("dialog", async (dialog) => {
   await dialog.dismiss().catch(() => undefined);
 });
 
-async function shot(name) {
-  try {
-    await page.screenshot({ path: `scripts/screenshots/${name}.png`, timeout: 5000 });
-    console.log(`shot ok: ${name}`);
-  } catch (err) {
-    console.log(`shot FAILED: ${name} - ${err.message}`);
-  }
-}
-
 try {
   console.log("step: goto register");
   await page.goto(`${BASE_URL}/register`, { timeout: 60000, waitUntil: "networkidle" });

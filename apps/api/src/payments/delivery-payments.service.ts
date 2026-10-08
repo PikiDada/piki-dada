@@ -114,6 +114,7 @@ export class DeliveryPaymentsService {
       delivery.fare ?? 0,
       delivery.paymentMethod,
       `Delivery ${deliveryId}`,
+      delivery.discount,
     );
   }
 }

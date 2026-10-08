@@ -56,7 +56,26 @@ const destination = { lat: 0.3621, lng: 32.6193 };
 describe('PricingService with stops', () => {
   afterEach(() => jest.clearAllMocks());
 
-  it('asks the maps platform for the whole route in visiting order', async () => {
+  it('prices with Google first, even when the maps platform is running', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { routes: [{ distanceMeters: 9000, duration: '1200s' }] },
+    });
+    const { service, maps } = makeService(
+      { GOOGLE_ROUTES_API_KEY: 'key' },
+      { distanceKm: 12, durationMin: 25 },
+    );
+
+    const estimate = await service.estimateFare(
+      RideType.BODA,
+      pickup,
+      destination,
+    );
+
+    expect(estimate.distanceKm).toBe(9);
+    expect(maps.route.mock.calls).toHaveLength(0);
+  });
+
+  it('falls back to the maps platform, with the whole route in visiting order', async () => {
     const { service, maps } = makeService(
       {},
       { distanceKm: 12, durationMin: 25 },

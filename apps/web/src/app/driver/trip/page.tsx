@@ -142,6 +142,12 @@ function DriverTripView({ id }: { id: string }) {
               Includes {trip.waitingFee.toLocaleString()} {trip.currency} for waiting at stops
             </p>
           )}
+          {!!trip.discount && (
+            <p className="text-sm text-green-700">
+              The passenger used a coupon and pays {trip.discount.toLocaleString()} {trip.currency} less.
+              Piki Dada pays you that difference, so your earnings are unchanged.
+            </p>
+          )}
 
           {trip.passenger?.phone && (
             <a href={`tel:${trip.passenger.phone}`} className="inline-block">

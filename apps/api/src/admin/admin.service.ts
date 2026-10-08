@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -7,6 +8,7 @@ import {
   DeliveryStatus,
   PaymentMethod,
   PaymentStatus,
+  Prisma,
   TripStatus,
   UserRole,
 } from '@prisma/client';
@@ -20,6 +22,7 @@ import { UpdateDeliverySizeTierDto } from './dto/update-delivery-size-tier.dto';
 import { UpdateDeliverySurchargeDto } from './dto/update-delivery-surcharge.dto';
 import { decryptUserPhone } from '../common/field-encryption';
 import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
+import { normalizeCouponCode } from '../coupons/coupons.service';
 
 // A passenger/sender cancelling their own request is what racks up billable Google Routes API
 // calls (charged at request time) for nothing -- a driver/rider backing out after accepting
@@ -597,12 +600,37 @@ export class AdminService {
   }
 
   createCoupon(dto: CreateCouponDto) {
-    return this.prisma.coupon.create({
-      data: {
-        ...dto,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
-      },
-    });
+    if (!!dto.discountAmount === !!dto.discountPercent) {
+      throw new BadRequestException(
+        'Set either an amount off or a percentage off, not both',
+      );
+    }
+    // Stored upper-case; passengers can type it in any case.
+    const code = normalizeCouponCode(dto.code);
+    if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
+      throw new BadRequestException(
+        'Codes are 3-40 letters, numbers, dashes or underscores',
+      );
+    }
+    return this.prisma.coupon
+      .create({
+        data: {
+          ...dto,
+          code,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+        },
+      })
+      .catch((err: unknown) => {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          throw new ConflictException(
+            `A coupon with the code ${code} already exists`,
+          );
+        }
+        throw err;
+      });
   }
 
   setCouponActive(id: string, isActive: boolean) {

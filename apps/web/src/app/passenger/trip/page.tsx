@@ -128,6 +128,11 @@ function PassengerTripView({ id }: { id: string }) {
               Includes {trip.waitingFee.toLocaleString()} {trip.currency} for waiting at stops
             </p>
           )}
+          {!!trip.discount && (
+            <p className="text-sm text-green-700">
+              Coupon {trip.couponCode}: {trip.discount.toLocaleString()} {trip.currency} off
+            </p>
+          )}
 
           {STOP_EDITABLE_STATUSES.includes(trip.status) &&
             stopProgress(trip.stops).locked.length < MAX_STOPS &&

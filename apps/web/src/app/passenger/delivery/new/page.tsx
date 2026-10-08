@@ -23,6 +23,7 @@ import {
 import { stopsPayload, stopsReady, waitingPolicyText, type StopDraft } from "@/lib/stops";
 import { PassengerNav } from "@/components/passenger/passenger-nav";
 import { StopListEditor } from "@/components/trip/stop-list-editor";
+import { CouponInput } from "@/components/trip/coupon-input";
 
 export default function NewDeliveryPage() {
   const router = useRouter();
@@ -42,6 +43,7 @@ export default function NewDeliveryPage() {
   const [dropoffContactName, setDropoffContactName] = useState("");
   const [dropoffContactPhone, setDropoffContactPhone] = useState("");
   const [stops, setStops] = useState<StopDraft[]>([]);
+  const [couponCode, setCouponCode] = useState<string | null>(null);
   const [waitingPolicy, setWaitingPolicy] = useState<WaitingPolicy | null>(null);
 
   const [itemDescription, setItemDescription] = useState("");
@@ -146,6 +148,7 @@ export default function NewDeliveryPage() {
             dropoffContactName,
             dropoffContactPhone,
             stops: stopsPayload(stops, true),
+            couponCode: couponCode ?? undefined,
             itemDescription,
             itemPhotoUrl,
             isFragile,
@@ -389,6 +392,8 @@ export default function NewDeliveryPage() {
               onChange={(e) => setCashOnDeliveryAmount(e.target.value)}
             />
           </div>
+
+          <CouponInput onChange={setCouponCode} />
 
           <div className="flex items-center justify-between rounded-2xl bg-neutral-100 px-4 py-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">

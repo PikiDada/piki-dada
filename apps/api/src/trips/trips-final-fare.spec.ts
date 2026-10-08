@@ -16,6 +16,12 @@ const trip = {
   destinationLng: 32.62,
   waitingPerMinute: 100,
   freeWaitMinutes: 3,
+  discount: 0,
+};
+
+type CouponLike = {
+  discountAmount: number | null;
+  discountPercent: number | null;
 };
 
 interface Stop {
@@ -31,6 +37,7 @@ function setup(
   stops: Stop[],
   repricedFare = 7000,
   waitingFee = 0,
+  coupon: CouponLike | null = null,
 ) {
   const prisma = {
     tripStop: {
@@ -38,19 +45,36 @@ function setup(
       findMany: jest.fn<Promise<Stop[]>, []>().mockResolvedValue(stops),
     },
     trip: {
-      update: jest.fn<Promise<unknown>, [{ data: { fare: number } }]>(),
+      update: jest.fn<
+        Promise<unknown>,
+        [{ data: { fare: number; discount?: number } }]
+      >(),
     },
   };
   const pricing = {
     settings: jest
-      .fn<Promise<{ unvisitedStopsPolicy: UnvisitedStopsPolicy }>, []>()
-      .mockResolvedValue({ unvisitedStopsPolicy: policy }),
+      .fn<
+        Promise<{
+          unvisitedStopsPolicy: UnvisitedStopsPolicy;
+          fareRoundingUnit: number;
+        }>,
+        []
+      >()
+      .mockResolvedValue({
+        unvisitedStopsPolicy: policy,
+        fareRoundingUnit: 500,
+      }),
     estimateFare: jest
       .fn<Promise<{ fare: number }>, [RideType, LatLng, LatLng, Stop[]]>()
       .mockResolvedValue({ fare: repricedFare }),
     waitingFee: jest
       .fn<Promise<number>, [typeof trip, Stop[]]>()
       .mockResolvedValue(waitingFee),
+  };
+  const coupons = {
+    couponFor: jest
+      .fn<Promise<CouponLike | null>, []>()
+      .mockResolvedValue(coupon),
   };
   const service = new TripsService(
     prisma as never,
@@ -59,6 +83,7 @@ function setup(
     {} as never,
     {} as never,
     {} as never,
+    coupons as never,
   );
   const internals = service as unknown as {
     finalizeFare: (t: typeof trip, d: Date) => Promise<number>;
@@ -112,6 +137,24 @@ describe('TripsService.finalizeFare', () => {
     expect(pricing.waitingFee.mock.calls[0][0]).toMatchObject({
       waitingPerMinute: 100,
       freeWaitMinutes: 3,
+    });
+  });
+
+  it('takes the coupon off a fare re-priced for skipped stops', async () => {
+    // Re-priced at 7,000; 10% off = 6,300, rounded down to 6,000.
+    const { finalize, prisma } = setup(
+      UnvisitedStopsPolicy.REMOVE_FROM_FARE,
+      [reached, skipped],
+      7000,
+      0,
+      { discountAmount: null, discountPercent: 10 },
+    );
+    expect(
+      await finalize({ ...trip, fare: 9000, discount: 1000 }, at(30)),
+    ).toBe(6000);
+    expect(prisma.trip.update.mock.calls[0][0].data).toMatchObject({
+      fare: 6000,
+      discount: 1000,
     });
   });
 

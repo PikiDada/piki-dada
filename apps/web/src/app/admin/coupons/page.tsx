@@ -33,6 +33,8 @@ export default function AdminCouponsPage() {
   const [discountAmount, setDiscountAmount] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
   const [maxUses, setMaxUses] = useState("");
+  const [expiresOn, setExpiresOn] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   // The first load needs no "loading" change: it starts true. Setting state synchronously
   // inside an effect costs an extra render, so only reloads (load) switch the spinner on.
@@ -55,19 +57,28 @@ export default function AdminCouponsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    await apiFetch("/admin/coupons", {
-      method: "POST",
-      body: JSON.stringify({
-        code,
-        discountAmount: discountAmount ? Number(discountAmount) : undefined,
-        discountPercent: discountPercent ? Number(discountPercent) : undefined,
-        maxUses: maxUses ? Number(maxUses) : undefined,
-      }),
-    });
+    setError(null);
+    try {
+      await apiFetch("/admin/coupons", {
+        method: "POST",
+        body: JSON.stringify({
+          code,
+          discountAmount: discountAmount ? Number(discountAmount) : undefined,
+          discountPercent: discountPercent ? Number(discountPercent) : undefined,
+          maxUses: maxUses ? Number(maxUses) : undefined,
+          // End of the chosen day, Kampala time.
+          expiresAt: expiresOn ? new Date(`${expiresOn}T23:59:59+03:00`).toISOString() : undefined,
+        }),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the coupon");
+      return;
+    }
     setCode("");
     setDiscountAmount("");
     setDiscountPercent("");
     setMaxUses("");
+    setExpiresOn("");
     load();
   }
 
@@ -85,6 +96,11 @@ export default function AdminCouponsPage() {
             <CardTitle>New coupon</CardTitle>
           </CardHeader>
           <CardContent>
+            <p className="mb-3 text-xs text-neutral-500">
+              Each passenger can use a code once, on a ride or a delivery. Piki Dada pays the
+              discount: riders earn as if there were no coupon. Set an amount or a percentage,
+              not both.
+            </p>
             <form onSubmit={handleCreate} className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Code</Label>
@@ -110,6 +126,11 @@ export default function AdminCouponsPage() {
                 <Label>Max uses</Label>
                 <Input type="number" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
               </div>
+              <div className="space-y-1.5">
+                <Label>Expires on (optional)</Label>
+                <Input type="date" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
               <Button type="submit" className="w-full">
                 Create coupon
               </Button>

@@ -20,6 +20,7 @@ import { ReplaceDeliveryStopsDto } from './dto/delivery-stop-input.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { decryptUserPhone } from '../common/field-encryption';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
+import { applyCoupon, CouponsService } from '../coupons/coupons.service';
 
 // Deliveries always match BODA-vehicle riders -- there's no rideType choice in the delivery
 // request itself, unlike ride booking.
@@ -55,6 +56,7 @@ export class DeliveriesService {
     private gateway: TripsGateway,
     private notifications: NotificationsService,
     private maps: MapsPlatformService,
+    private coupons: CouponsService,
   ) {}
 
   async requestDelivery(senderId: string, dto: RequestDeliveryDto) {
@@ -69,46 +71,64 @@ export class DeliveriesService {
       stops,
     );
 
-    const delivery = await this.prisma.delivery.create({
-      include: { stops: ORDERED_STOPS },
-      data: {
-        senderId,
-        categoryId: dto.categoryId,
-        sizeTierId: dto.sizeTierId,
-        status: DeliveryStatus.SEARCHING,
-        pickupContactName: dto.pickupContactName,
-        pickupContactPhone: dto.pickupContactPhone,
-        pickupAddress: dto.pickupAddress,
-        pickupLat: dto.pickupLat,
-        pickupLng: dto.pickupLng,
-        dropoffContactName: dto.dropoffContactName,
-        dropoffContactPhone: dto.dropoffContactPhone,
-        destinationAddress: dto.destinationAddress,
-        destinationLat: dto.destinationLat,
-        destinationLng: dto.destinationLng,
-        itemDescription: dto.itemDescription,
-        itemPhotoUrl: dto.itemPhotoUrl,
-        isFragile: dto.isFragile ?? false,
-        isLiquid: dto.isLiquid ?? false,
-        cashOnDeliveryAmount: dto.cashOnDeliveryAmount,
-        distanceKm: estimate.distanceKm,
-        durationMin: estimate.durationMin,
-        fare: estimate.fare,
-        currency: estimate.currency,
-        paymentMethod: dto.paymentMethod,
-        waitingPerMinute: estimate.waitingPerMinute,
-        freeWaitMinutes: estimate.freeWaitMinutes,
-        stops: {
-          create: stops.map((s, i) => ({
-            sequence: i,
-            address: s.address,
-            lat: s.lat,
-            lng: s.lng,
-            contactName: s.contactName,
-            contactPhone: s.contactPhone,
-          })),
+    // The delivery and the coupon claim succeed or fail together; see TripsService.requestTrip.
+    const { fareRoundingUnit } = await this.pricing.settings();
+    const delivery = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.delivery.create({
+        include: { stops: ORDERED_STOPS },
+        data: {
+          senderId,
+          categoryId: dto.categoryId,
+          sizeTierId: dto.sizeTierId,
+          status: DeliveryStatus.SEARCHING,
+          pickupContactName: dto.pickupContactName,
+          pickupContactPhone: dto.pickupContactPhone,
+          pickupAddress: dto.pickupAddress,
+          pickupLat: dto.pickupLat,
+          pickupLng: dto.pickupLng,
+          dropoffContactName: dto.dropoffContactName,
+          dropoffContactPhone: dto.dropoffContactPhone,
+          destinationAddress: dto.destinationAddress,
+          destinationLat: dto.destinationLat,
+          destinationLng: dto.destinationLng,
+          itemDescription: dto.itemDescription,
+          itemPhotoUrl: dto.itemPhotoUrl,
+          isFragile: dto.isFragile ?? false,
+          isLiquid: dto.isLiquid ?? false,
+          cashOnDeliveryAmount: dto.cashOnDeliveryAmount,
+          distanceKm: estimate.distanceKm,
+          durationMin: estimate.durationMin,
+          fare: estimate.fare,
+          currency: estimate.currency,
+          paymentMethod: dto.paymentMethod,
+          waitingPerMinute: estimate.waitingPerMinute,
+          freeWaitMinutes: estimate.freeWaitMinutes,
+          stops: {
+            create: stops.map((s, i) => ({
+              sequence: i,
+              address: s.address,
+              lat: s.lat,
+              lng: s.lng,
+              contactName: s.contactName,
+              contactPhone: s.contactPhone,
+            })),
+          },
         },
-      },
+      });
+      if (!dto.couponCode) return created;
+      const coupon = await this.coupons.redeem(tx, senderId, dto.couponCode, {
+        deliveryId: created.id,
+      });
+      const { fare, discount } = applyCoupon(
+        coupon,
+        estimate.fare,
+        fareRoundingUnit,
+      );
+      return tx.delivery.update({
+        where: { id: created.id },
+        data: { fare, discount, couponCode: coupon.code },
+        include: { stops: ORDERED_STOPS },
+      });
     });
 
     this.maps.recordPlaces([
@@ -166,7 +186,7 @@ export class DeliveriesService {
       SOCKET_EVENTS.DELIVERY_ACCEPTED,
       updated,
     );
-    this.notifications.notifyUser(
+    void this.notifications.notifyUser(
       updated.senderId,
       'Rider on the way',
       `${updated.rider?.user?.name ?? 'Your rider'} accepted your delivery request.`,
@@ -223,6 +243,10 @@ export class DeliveriesService {
       },
     });
 
+    if (dto.status === DeliveryStatus.CANCELLED) {
+      await this.coupons.release({ deliveryId });
+    }
+
     if (dto.status === DeliveryStatus.DELIVERED) {
       const finalFare =
         delivery.status === DeliveryStatus.DELIVERED
@@ -246,7 +270,7 @@ export class DeliveriesService {
           data: { totalTrips: { increment: 1 } },
         });
       }
-      this.notifications.notifyUser(
+      void this.notifications.notifyUser(
         delivery.senderId,
         'Delivery completed',
         `Your delivery is complete. Fare: ${finalFare} ${delivery.currency}.`,
@@ -311,7 +335,8 @@ export class DeliveriesService {
       ...lockedStops,
       ...dto.stops,
     ]);
-    return { ...estimate, previousFare: delivery.fare };
+    const { fare } = await this.withCoupon(deliveryId, estimate.fare);
+    return { ...estimate, fare, previousFare: delivery.fare };
   }
 
   async replaceStops(
@@ -328,6 +353,7 @@ export class DeliveriesService {
       ...lockedStops,
       ...dto.stops,
     ]);
+    const priced = await this.withCoupon(deliveryId, estimate.fare);
 
     await this.prisma.$transaction([
       this.prisma.deliveryStop.deleteMany({
@@ -347,7 +373,8 @@ export class DeliveriesService {
       this.prisma.delivery.update({
         where: { id: deliveryId },
         data: {
-          fare: estimate.fare,
+          fare: priced.fare,
+          discount: priced.discount,
           distanceKm: estimate.distanceKm,
           durationMin: estimate.durationMin,
         },
@@ -361,13 +388,21 @@ export class DeliveriesService {
     const updated = await this.loadDelivery(deliveryId);
     this.broadcast(updated, SOCKET_EVENTS.DELIVERY_STATUS_UPDATED);
     if (updated.rider) {
-      this.notifications.notifyUser(
+      void this.notifications.notifyUser(
         updated.rider.userId,
         'Drop-offs changed',
-        `The sender updated their drop-offs. New fare: ${estimate.fare} ${estimate.currency}.`,
+        `The sender updated their drop-offs. New fare: ${priced.fare} ${estimate.currency}.`,
       );
     }
     return updated;
+  }
+
+  // Same as TripsService.withCoupon.
+  private async withCoupon(deliveryId: string, baseFare: number) {
+    const coupon = await this.coupons.couponFor({ deliveryId });
+    if (!coupon) return { fare: baseFare, discount: 0 };
+    const { fareRoundingUnit } = await this.pricing.settings();
+    return applyCoupon(coupon, baseFare, fareRoundingUnit);
   }
 
   private estimateWithStops(

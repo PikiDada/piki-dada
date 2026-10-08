@@ -119,21 +119,19 @@ export class PricingService {
     return total;
   }
 
-  // Three-layer fallback, cheapest/free first: the maps platform (self-hosted OSRM, tuned by
-  // speeds learned from real trips; if MAPS_PLATFORM_URL is configured) -> Google Routes API
-  // (if GOOGLE_ROUTES_API_KEY is configured) -> straight-line estimate in the caller. Each
-  // layer never throws -- a routing outage never blocks a passenger from booking a trip, it
-  // just prices a bit less precisely. `points` is the whole route in visiting order: pickup,
-  // any stops, destination.
+  // Three-layer fallback: Google Routes API (if GOOGLE_ROUTES_API_KEY is configured) -> the
+  // maps platform (self-hosted OSRM tuned by speeds learned from real trips; if
+  // MAPS_PLATFORM_URL is configured) -> straight-line estimate in the caller.
+  //
+  // Google comes first on purpose: it prices the fares while the maps platform learns from
+  // every trip in the background, until a planned evaluation (about a year in) shows the
+  // platform is good enough to take over. Each layer never throws -- a routing outage never
+  // blocks a passenger from booking, it just prices a bit less precisely. `points` is the
+  // whole route in visiting order: pickup, any stops, destination.
   private async computeRoadRoute(points: LatLng[]): Promise<RoadRoute | null> {
-    if (this.maps.enabled) {
-      const route = await this.maps.route(points);
-      if (route) return route;
-      this.logger.warn(
-        'Maps platform route failed, falling back to Google Routes API',
-      );
-    }
-    return this.computeGoogleRoute(points);
+    const google = await this.computeGoogleRoute(points);
+    if (google) return google;
+    return this.maps.enabled ? this.maps.route(points) : null;
   }
 
   // Real road distance/duration via Google's Routes API. Returns null (never

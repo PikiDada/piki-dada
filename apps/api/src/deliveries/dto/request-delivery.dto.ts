@@ -82,4 +82,8 @@ export class RequestDeliveryDto {
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
 }

@@ -238,6 +238,9 @@ model Trip {
   fare               Float?
   currency           String        @default("UGX")
   couponCode         String?
+  // Taken off by the coupon; `fare` is already net of it. Piki Dada funds it, so the rider's
+  // earnings and commission are worked out on fare + discount (see PaymentsService).
+  discount           Float         @default(0)
   paymentMethod      PaymentMethod
   acceptedAt         DateTime?
   arrivedAt          DateTime?
@@ -345,6 +348,9 @@ model Delivery {
   durationMin          Float?
   // Same as Trip.waitingFee / waitingPerMinute / freeWaitMinutes -- see their comments.
   waitingFee           Float             @default(0)
+  // Same as Trip.couponCode / Trip.discount.
+  couponCode           String?
+  discount             Float             @default(0)
   waitingPerMinute     Float             @default(0)
   freeWaitMinutes      Int               @default(3)
   fare                 Float?
@@ -453,6 +459,23 @@ model Coupon {
   expiresAt       DateTime?
   isActive        Boolean   @default(true)
   createdAt       DateTime  @default(now())
+
+  redemptions CouponRedemption[]
+}
+
+// One row per passenger per coupon: the unique pair is what limits a coupon to one use per
+// passenger, even with two bookings in flight at once. Deleted (and usedCount given back)
+// when the booking it was used on is cancelled.
+model CouponRedemption {
+  id         String   @id @default(cuid())
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId     String
+  tripId     String?  @unique
+  deliveryId String?  @unique
+  createdAt  DateTime @default(now())
+
+  @@unique([couponId, userId])
 }
 
 model PricingRule {

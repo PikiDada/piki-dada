@@ -23,6 +23,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { decryptUserPhone } from '../common/field-encryption';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
+import { applyCoupon, CouponsService } from '../coupons/coupons.service';
 
 const SEARCH_RADIUS_KM = 6;
 
@@ -57,6 +58,7 @@ export class TripsService {
     private notifications: NotificationsService,
     private emailService: EmailService,
     private maps: MapsPlatformService,
+    private coupons: CouponsService,
   ) {}
 
   async requestTrip(passengerId: string, dto: RequestTripDto) {
@@ -70,35 +72,56 @@ export class TripsService {
       stops,
     );
 
-    const trip = await this.prisma.trip.create({
-      include: { stops: ORDERED_STOPS },
-      data: {
-        passengerId,
-        status: TripStatus.SEARCHING,
-        rideType: dto.rideType,
-        pickupAddress: dto.pickupAddress,
-        pickupLat: dto.pickupLat,
-        pickupLng: dto.pickupLng,
-        destinationAddress: dto.destinationAddress,
-        destinationLat: dto.destinationLat,
-        destinationLng: dto.destinationLng,
-        distanceKm: estimate.distanceKm,
-        durationMin: estimate.durationMin,
-        fare: estimate.fare,
-        currency: estimate.currency,
-        couponCode: dto.couponCode,
-        paymentMethod: dto.paymentMethod,
-        waitingPerMinute: estimate.waitingPerMinute,
-        freeWaitMinutes: estimate.freeWaitMinutes,
-        stops: {
-          create: stops.map((s, i) => ({
-            sequence: i,
-            address: s.address,
-            lat: s.lat,
-            lng: s.lng,
-          })),
+    const { fareRoundingUnit } = await this.pricing.settings();
+    const trip = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.trip.create({
+        include: { stops: ORDERED_STOPS },
+        data: {
+          passengerId,
+          status: TripStatus.SEARCHING,
+          rideType: dto.rideType,
+          pickupAddress: dto.pickupAddress,
+          pickupLat: dto.pickupLat,
+          pickupLng: dto.pickupLng,
+          destinationAddress: dto.destinationAddress,
+          destinationLat: dto.destinationLat,
+          destinationLng: dto.destinationLng,
+          distanceKm: estimate.distanceKm,
+          durationMin: estimate.durationMin,
+          fare: estimate.fare,
+          currency: estimate.currency,
+          paymentMethod: dto.paymentMethod,
+          waitingPerMinute: estimate.waitingPerMinute,
+          freeWaitMinutes: estimate.freeWaitMinutes,
+          stops: {
+            create: stops.map((s, i) => ({
+              sequence: i,
+              address: s.address,
+              lat: s.lat,
+              lng: s.lng,
+            })),
+          },
         },
-      },
+      });
+      if (!dto.couponCode) return created;
+      const coupon = await this.coupons.redeem(
+        tx,
+        passengerId,
+        dto.couponCode,
+        {
+          tripId: created.id,
+        },
+      );
+      const { fare, discount } = applyCoupon(
+        coupon,
+        estimate.fare,
+        fareRoundingUnit,
+      );
+      return tx.trip.update({
+        where: { id: created.id },
+        data: { fare, discount, couponCode: coupon.code },
+        include: { stops: ORDERED_STOPS },
+      });
     });
 
     this.maps.recordPlaces([
@@ -157,7 +180,7 @@ export class TripsService {
       SOCKET_EVENTS.TRIP_ACCEPTED,
       updated,
     );
-    this.notifications.notifyUser(
+    void this.notifications.notifyUser(
       updated.passengerId,
       'Rider on the way',
       `${updated.driver?.user?.name ?? 'Your rider'} accepted your ride request.`,
@@ -203,6 +226,10 @@ export class TripsService {
       },
     });
 
+    if (dto.status === TripStatus.CANCELLED) {
+      await this.coupons.release({ tripId });
+    }
+
     if (dto.status === TripStatus.COMPLETED) {
       await this.recordActualRoute(tripId, trip.startedAt, now);
 
@@ -229,12 +256,12 @@ export class TripsService {
           data: { totalTrips: { increment: 1 } },
         });
       }
-      this.notifications.notifyUser(
+      void this.notifications.notifyUser(
         trip.passengerId,
         'Trip completed',
         `Your trip is complete. Fare: ${finalFare} ${trip.currency}.`,
       );
-      this.emailService.sendTripReceipt(
+      void this.emailService.sendTripReceipt(
         trip.passenger.email,
         finalFare,
         trip.currency,
@@ -278,6 +305,7 @@ export class TripsService {
     ]);
 
     let fare = trip.fare ?? 0;
+    let discount = trip.discount;
     const reached = stops.filter((s) => s.arrivedAt);
     if (
       reached.length < stops.length &&
@@ -289,7 +317,11 @@ export class TripsService {
         { lat: trip.destinationLat, lng: trip.destinationLng },
         reached,
       );
-      fare = Math.min(fare, repriced.fare);
+      const withCoupon = await this.withCoupon(trip.id, repriced.fare);
+      if (withCoupon.fare < fare) {
+        fare = withCoupon.fare;
+        discount = withCoupon.discount;
+      }
     }
 
     const waitingFee = await this.pricing.waitingFee(trip, stops);
@@ -297,10 +329,18 @@ export class TripsService {
     if (finalFare !== trip.fare || waitingFee > 0) {
       await this.prisma.trip.update({
         where: { id: trip.id },
-        data: { waitingFee, fare: finalFare },
+        data: { waitingFee, fare: finalFare, discount },
       });
     }
     return finalFare;
+  }
+
+  // A fare for this trip's route with the trip's coupon taken off, if it was booked with one.
+  private async withCoupon(tripId: string, baseFare: number) {
+    const coupon = await this.coupons.couponFor({ tripId });
+    if (!coupon) return { fare: baseFare, discount: 0 };
+    const { fareRoundingUnit } = await this.pricing.settings();
+    return applyCoupon(coupon, baseFare, fareRoundingUnit);
   }
 
   // What the booking page shows, before the passenger requests a ride.
@@ -324,7 +364,8 @@ export class TripsService {
       { lat: trip.destinationLat, lng: trip.destinationLng },
       [...lockedStops, ...dto.stops],
     );
-    return { ...estimate, previousFare: trip.fare };
+    const { fare } = await this.withCoupon(tripId, estimate.fare);
+    return { ...estimate, fare, previousFare: trip.fare };
   }
 
   // Re-prices the whole route from pickup, so the new fare is exactly what booking this
@@ -345,6 +386,7 @@ export class TripsService {
       { lat: trip.destinationLat, lng: trip.destinationLng },
       [...lockedStops, ...dto.stops],
     );
+    const priced = await this.withCoupon(tripId, estimate.fare);
 
     await this.prisma.$transaction([
       this.prisma.tripStop.deleteMany({ where: { tripId, arrivedAt: null } }),
@@ -360,7 +402,8 @@ export class TripsService {
       this.prisma.trip.update({
         where: { id: tripId },
         data: {
-          fare: estimate.fare,
+          fare: priced.fare,
+          discount: priced.discount,
           distanceKm: estimate.distanceKm,
           durationMin: estimate.durationMin,
         },
@@ -374,10 +417,10 @@ export class TripsService {
     const updated = await this.loadTrip(tripId);
     this.broadcast(updated, SOCKET_EVENTS.TRIP_STATUS_UPDATED);
     if (updated.driver) {
-      this.notifications.notifyUser(
+      void this.notifications.notifyUser(
         updated.driver.userId,
         'Stops changed',
-        `Your passenger updated their stops. New fare: ${estimate.fare} ${estimate.currency}.`,
+        `Your passenger updated their stops. New fare: ${priced.fare} ${estimate.currency}.`,
       );
     }
     return updated;

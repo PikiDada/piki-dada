@@ -17,6 +17,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
 import { MapsPlatformModule } from './maps-platform/maps-platform.module';
 import { PricingSettingsModule } from './pricing-settings/pricing-settings.module';
+import { CouponsModule } from './coupons/coupons.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PricingSettingsModule } from './pricing-settings/pricing-settings.modul
     PrismaModule,
     MapsPlatformModule,
     PricingSettingsModule,
+    CouponsModule,
     AuthModule,
     UsersModule,
     DriversModule,

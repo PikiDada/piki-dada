@@ -135,6 +135,11 @@ function PassengerDeliveryView({ id }: { id: string }) {
               drop-offs
             </p>
           )}
+          {!!delivery.discount && (
+            <p className="text-sm text-green-700">
+              Coupon {delivery.couponCode}: {delivery.discount.toLocaleString()} {delivery.currency} off
+            </p>
+          )}
 
           {STOP_EDITABLE_STATUSES.includes(delivery.status) &&
             stopProgress(delivery.stops).locked.length < MAX_STOPS &&

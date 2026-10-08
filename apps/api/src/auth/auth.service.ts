@@ -65,7 +65,7 @@ export class AuthService {
       phone: dto.phone,
       role: dto.role,
     });
-    this.emailService.sendWelcomeEmail(user.email, user.name);
+    void this.emailService.sendWelcomeEmail(user.email, user.name);
     // Verification-token creation and session-token issuance are independent writes
     // that both only need user.id -- no reason to serialize them.
     const [, tokens] = await Promise.all([
@@ -112,7 +112,7 @@ export class AuthService {
       VerificationTokenPurpose.EMAIL_VERIFICATION,
       EMAIL_VERIFICATION_TTL_MS,
     );
-    this.emailService.sendVerificationEmail(email, token);
+    void this.emailService.sendVerificationEmail(email, token);
   }
 
   async verifyEmail(token: string) {
@@ -147,7 +147,7 @@ export class AuthService {
         VerificationTokenPurpose.PASSWORD_RESET,
         PASSWORD_RESET_TTL_MS,
       );
-      this.emailService.sendPasswordResetEmail(user.email, token);
+      void this.emailService.sendPasswordResetEmail(user.email, token);
     }
     return { success: true };
   }

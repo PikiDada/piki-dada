@@ -67,7 +67,7 @@ export class TripsGateway implements OnGatewayConnection {
     const isMember =
       trip && (trip.passengerId === userId || trip.driver?.userId === userId);
     if (!isMember) return;
-    client.join(`trip:${tripId}`);
+    void client.join(`trip:${tripId}`);
   }
 
   @SubscribeMessage('delivery:join')
@@ -84,7 +84,7 @@ export class TripsGateway implements OnGatewayConnection {
       delivery &&
       (delivery.senderId === userId || delivery.rider?.userId === userId);
     if (!isMember) return;
-    client.join(`delivery:${deliveryId}`);
+    void client.join(`delivery:${deliveryId}`);
   }
 
   // Widened to accept either a trip or a delivery reference, rather than a second handler --

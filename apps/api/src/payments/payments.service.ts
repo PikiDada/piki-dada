@@ -114,6 +114,7 @@ export class PaymentsService {
       trip.fare ?? 0,
       trip.paymentMethod,
       `Trip ${tripId}`,
+      trip.discount,
     );
   }
 
@@ -122,38 +123,53 @@ export class PaymentsService {
   // stay deliberately duplicated per delivery/trip to avoid touching this real-money code path
   // for the sake of reuse. `referenceLabel` becomes the ledger entry's human-readable reason,
   // e.g. "Trip abc123" or "Delivery xyz789".
+  //
+  // `couponDiscount`: Piki Dada funds coupons, so the rider earns on the full fare (what the
+  // passenger paid + the discount), and commission is worked out on that full fare too.
   async creditDriverEarnings(
     userId: string,
     fare: number,
     paymentMethod: PaymentMethod,
     referenceLabel: string,
+    couponDiscount = 0,
   ) {
     // The rate in force when the payment is confirmed (admin-set in /admin/pricing).
     const { platformCommissionRate } = await this.pricingSettings.get();
-    const commission = Math.round(fare * platformCommissionRate);
+    const fullFare = fare + couponDiscount;
+    const commission = Math.round(fullFare * platformCommissionRate);
 
     if (paymentMethod === PaymentMethod.CASH) {
       // Cash trips/deliveries: the rider already collected the full fare directly from the
       // customer, so the platform never held any of this money -- crediting 85% on top would
       // pay the rider twice. What's actually owed runs the other way: the rider owes the
       // platform its commission. Record that as a debit rather than paying out money that was
-      // never collected.
+      // never collected. A coupon is the exception: the rider collected that much less cash,
+      // and Piki Dada owes it to them.
+      const entries = [
+        {
+          amount: -commission,
+          reason: `${referenceLabel} commission owed (cash)`,
+        },
+        ...(couponDiscount > 0
+          ? [
+              {
+                amount: couponDiscount,
+                reason: `${referenceLabel} coupon discount, paid by Piki Dada`,
+              },
+            ]
+          : []),
+      ];
       await this.prisma.wallet.update({
         where: { userId },
         data: {
-          balance: { decrement: commission },
-          ledgerEntries: {
-            create: {
-              amount: -commission,
-              reason: `${referenceLabel} commission owed (cash)`,
-            },
-          },
+          balance: { increment: couponDiscount - commission },
+          ledgerEntries: { create: entries },
         },
       });
       return;
     }
 
-    const driverEarnings = fare - commission;
+    const driverEarnings = fullFare - commission;
     await this.prisma.wallet.update({
       where: { userId },
       data: {

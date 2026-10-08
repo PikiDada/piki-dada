@@ -58,6 +58,8 @@ export interface Trip {
   waitingFee?: number;
   waitingPerMinute?: number;
   freeWaitMinutes?: number;
+  couponCode?: string | null;
+  discount?: number;
   stops?: TripStop[];
   currency: string;
   pickupAddress: string;
@@ -183,6 +185,8 @@ export interface Delivery {
   waitingFee?: number;
   waitingPerMinute?: number;
   freeWaitMinutes?: number;
+  couponCode?: string | null;
+  discount?: number;
   stops?: DeliveryStop[];
   currency: string;
   paymentMethod: PaymentMethod;
