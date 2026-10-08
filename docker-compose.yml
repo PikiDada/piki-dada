@@ -166,6 +166,11 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        # Map display switch; unset means Google. See deploy/README.md.
+        NEXT_PUBLIC_MAP_PROVIDER: ${NEXT_PUBLIC_MAP_PROVIDER:-}
+        NEXT_PUBLIC_MAP_TILES_URL: ${NEXT_PUBLIC_MAP_TILES_URL:-}
+        NEXT_PUBLIC_MAP_GLYPHS_URL: ${NEXT_PUBLIC_MAP_GLYPHS_URL:-}
+        NEXT_PUBLIC_MAP_SPRITE_URL: ${NEXT_PUBLIC_MAP_SPRITE_URL:-}
     restart: unless-stopped
     mem_limit: 128m
     ports:
@@ -173,6 +178,9 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Map tiles (.pmtiles) for our own map display, served at /tiles/*; see the Caddyfile
+      # and deploy/README.md. Empty unless you've put a file there.
+      - ./data/tiles:/srv/tiles:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

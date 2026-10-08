@@ -51,6 +51,22 @@ func New(baseURL string, matchRadiusM int) *Client {
 type Route struct {
 	DistanceM float64
 	DurationS float64
+	// Legs carry OSRM's per-segment breakdown, so the platform can swap in speeds learned for
+	// the time of day (see learn.AdjustDuration). One leg per pair of consecutive points.
+	Legs []RouteLeg
+}
+
+// RouteLeg is one leg of a route. Annotation.Nodes lists the OSM nodes it passes through;
+// Distance[i] and Duration[i] describe the segment from Nodes[i] to Nodes[i+1], so a
+// well-formed leg has one fewer of those than nodes.
+type RouteLeg struct {
+	Annotation RouteAnnotation `json:"annotation"`
+}
+
+type RouteAnnotation struct {
+	Nodes    []int64   `json:"nodes"`
+	Distance []float64 `json:"distance"` // metres
+	Duration []float64 `json:"duration"` // seconds, without turn penalties
 }
 
 func (c *Client) Route(ctx context.Context, points []Point) (Route, error) {
@@ -58,18 +74,21 @@ func (c *Client) Route(ctx context.Context, points []Point) (Route, error) {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 		Routes  []struct {
-			Distance float64 `json:"distance"`
-			Duration float64 `json:"duration"`
+			Distance float64    `json:"distance"`
+			Duration float64    `json:"duration"`
+			Legs     []RouteLeg `json:"legs"`
 		} `json:"routes"`
 	}
-	url := fmt.Sprintf("%s/route/v1/driving/%s?overview=false", c.baseURL, coords(points))
+	url := fmt.Sprintf("%s/route/v1/driving/%s?overview=false&annotations=nodes,distance,duration",
+		c.baseURL, coords(points))
 	if err := c.getJSON(ctx, url, &body); err != nil {
 		return Route{}, err
 	}
 	if body.Code != "Ok" || len(body.Routes) == 0 {
 		return Route{}, fmt.Errorf("osrm route: %s %s", body.Code, body.Message)
 	}
-	return Route{DistanceM: body.Routes[0].Distance, DurationS: body.Routes[0].Duration}, nil
+	r := body.Routes[0]
+	return Route{DistanceM: r.Distance, DurationS: r.Duration, Legs: r.Legs}, nil
 }
 
 // MatchResponse is the part of OSRM's /match response the learner needs.

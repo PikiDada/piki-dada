@@ -15,6 +15,7 @@ import {
   DollarSign,
   Megaphone,
   Wallet,
+  Gauge,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ const ITEMS = [
   { href: "/admin/delivery-size-tiers", label: "Delivery pricing", icon: Scale },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/pricing", label: "Pricing", icon: DollarSign },
+  { href: "/admin/estimate-accuracy", label: "Estimate accuracy", icon: Gauge },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
   { href: "/admin/push", label: "Push", icon: Megaphone },
 ];

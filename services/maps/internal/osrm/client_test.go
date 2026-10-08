@@ -58,3 +58,25 @@ func TestServerErrorIsAnError(t *testing.T) {
 		t.Fatalf("got %v, want a server error", err)
 	}
 }
+
+func TestRouteAsksForAndReturnsSegmentAnnotations(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Write([]byte(`{"code":"Ok","routes":[{"distance":700,"duration":80,"legs":[
+			{"annotation":{"nodes":[1,2,3],"distance":[300,400],"duration":[30,40]}}]}]}`))
+	}))
+	defer srv.Close()
+
+	r, err := New(srv.URL, 20).Route(context.Background(), []Point{{}, {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotQuery, "annotations=nodes,distance,duration") {
+		t.Errorf("query %q does not ask for segment annotations", gotQuery)
+	}
+	if r.DistanceM != 700 || r.DurationS != 80 || len(r.Legs) != 1 ||
+		len(r.Legs[0].Annotation.Nodes) != 3 || r.Legs[0].Annotation.Duration[1] != 40 {
+		t.Fatalf("unexpected route: %+v", r)
+	}
+}

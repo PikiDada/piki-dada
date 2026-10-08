@@ -102,6 +102,7 @@ export class DeliveriesService {
           routeSource: estimate.routeSource,
           mapsDistanceKm: estimate.mapsDistanceKm,
           mapsDurationMin: estimate.mapsDurationMin,
+          durationFactor: estimate.durationFactor,
           fare: estimate.fare,
           currency: estimate.currency,
           paymentMethod: dto.paymentMethod,
@@ -134,12 +135,6 @@ export class DeliveriesService {
         include: { stops: ORDERED_STOPS },
       });
     });
-
-    this.maps.recordPlaces([
-      { label: dto.pickupAddress, ...pickup },
-      ...stops.map((s) => ({ label: s.address, lat: s.lat, lng: s.lng })),
-      { label: dto.destinationAddress, ...destination },
-    ]);
 
     const [nearbyRiders, { averageSpeedKmh }] = await Promise.all([
       this.pricing.findNearbyDrivers(RideType.BODA, pickup, SEARCH_RADIUS_KM),
@@ -249,6 +244,20 @@ export class DeliveriesService {
 
     if (dto.status === DeliveryStatus.CANCELLED) {
       await this.coupons.release({ deliveryId });
+    }
+    // The gazetteer learns places where the rider actually arrived (see learnPlace).
+    if (dto.status === DeliveryStatus.ARRIVED_PICKUP) {
+      this.maps.learnPlace(`delivery:${deliveryId}`, delivery.pickupAddress, {
+        lat: delivery.pickupLat,
+        lng: delivery.pickupLng,
+      });
+    }
+    if (dto.status === DeliveryStatus.ARRIVED_DROPOFF) {
+      this.maps.learnPlace(
+        `delivery:${deliveryId}`,
+        delivery.destinationAddress,
+        { lat: delivery.destinationLat, lng: delivery.destinationLng },
+      );
     }
 
     if (dto.status === DeliveryStatus.DELIVERED) {
@@ -411,13 +420,10 @@ export class DeliveriesService {
           routeSource: estimate.routeSource,
           mapsDistanceKm: estimate.mapsDistanceKm,
           mapsDurationMin: estimate.mapsDurationMin,
+          durationFactor: estimate.durationFactor,
         },
       }),
     ]);
-
-    this.maps.recordPlaces(
-      dto.stops.map((s) => ({ label: s.address, lat: s.lat, lng: s.lng })),
-    );
 
     const updated = await this.loadDelivery(deliveryId);
     this.broadcast(updated, SOCKET_EVENTS.DELIVERY_STATUS_UPDATED);
@@ -501,6 +507,7 @@ export class DeliveriesService {
       where: { id: stopId },
       data: { arrivedAt: new Date() },
     });
+    this.maps.learnPlace(`delivery:${deliveryId}`, next.address, next);
     const updated = await this.loadDelivery(deliveryId);
     this.broadcast(updated, SOCKET_EVENTS.DELIVERY_STATUS_UPDATED);
     return updated;

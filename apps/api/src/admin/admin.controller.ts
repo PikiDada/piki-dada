@@ -23,6 +23,7 @@ import { AdminService } from './admin.service';
 import { UpsertPricingRuleDto } from './dto/upsert-pricing-rule.dto';
 import { UpdatePricingSettingsDto } from './dto/update-pricing-settings.dto';
 import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
+import { EstimateAccuracyService } from '../pricing-settings/estimate-accuracy.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateDeliveryCategoryDto } from './dto/create-delivery-category.dto';
 import { UpdateDeliveryCategoryDto } from './dto/update-delivery-category.dto';
@@ -43,6 +44,7 @@ export class AdminController {
     private pushService: PushService,
     private auditLog: AuditLogService,
     private pricingSettings: PricingSettingsService,
+    private estimateAccuracy: EstimateAccuracyService,
   ) {}
 
   @Get('stats')
@@ -325,6 +327,13 @@ export class AdminController {
       { ...dto },
     );
     return result;
+  }
+
+  // How far Google's and the maps platform's estimates are from real trips, by ride type and
+  // time of day, and the duration correction each would get.
+  @Get('estimate-accuracy')
+  getEstimateAccuracy() {
+    return this.estimateAccuracy.report();
   }
 
   @Get('coupons')

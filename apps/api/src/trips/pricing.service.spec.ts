@@ -25,6 +25,7 @@ function makeService(
   env: Record<string, string> = {},
   mapsRoute?: { distanceKm: number; durationMin: number },
   settings: Partial<typeof DEFAULT_SETTINGS> = {},
+  durationFactor = 1,
 ) {
   const prisma = {
     pricingRule: {
@@ -40,13 +41,17 @@ function makeService(
   const pricingSettings = {
     get: jest.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, ...settings }),
   };
+  const accuracy = {
+    durationFactor: jest.fn().mockResolvedValue(durationFactor),
+  };
   const service = new PricingService(
     prisma as never,
     config as never,
     maps as never,
     pricingSettings as never,
+    accuracy as never,
   );
-  return { service, maps };
+  return { service, maps, accuracy };
 }
 
 const pickup = { lat: 0.3136, lng: 32.5811 };
@@ -76,6 +81,38 @@ describe('PricingService with stops', () => {
     expect(maps.route).toHaveBeenCalledWith([pickup, destination]);
     expect(estimate.mapsDistanceKm).toBe(12);
     expect(estimate.mapsDurationMin).toBe(25);
+  });
+
+  it("scales Google's duration by the learned correction", async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { routes: [{ distanceMeters: 9000, duration: '1200s' }] },
+    });
+    const { service } = makeService(
+      { GOOGLE_ROUTES_API_KEY: 'key' },
+      undefined,
+      {},
+      1.5,
+    );
+
+    const estimate = await service.estimateFare(
+      RideType.BODA,
+      pickup,
+      destination,
+    );
+
+    expect(estimate.durationMin).toBe(30);
+    expect(estimate.durationFactor).toBe(1.5);
+  });
+
+  it('never corrects a duration that did not come from Google', async () => {
+    const { service, accuracy } = makeService({}, undefined, {}, 1.5);
+    const estimate = await service.estimateFare(
+      RideType.BODA,
+      pickup,
+      destination,
+    );
+    expect(estimate.durationFactor).toBe(1);
+    expect(accuracy.durationFactor).not.toHaveBeenCalled();
   });
 
   it('says when the fare came from the straight-line fallback', async () => {

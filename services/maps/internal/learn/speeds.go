@@ -4,6 +4,7 @@ package learn
 
 import (
 	"sort"
+	"time"
 
 	"pikidada.com/mapsplatform/internal/osrm"
 )
@@ -24,15 +25,26 @@ type Segment struct {
 	To   int64
 }
 
+// BandSpeedKey is what a learned speed is stored under: a segment, and the time band it was
+// observed in (BandAllDay for the all-day speed).
+type BandSpeedKey struct {
+	Segment
+	Band int
+}
+
 // ObservedSpeeds returns, for every road segment the matched trace passed along, the speed
 // the vehicle actually travelled at, measured from the GPS timestamps (not OSRM's own
 // estimate). When one trace passes a segment several times the readings are averaged, so a
 // single journey counts once per segment.
 //
+// Every reading is credited twice: to the segment's all-day speed (BandAllDay) and to the
+// band of the time it was observed, taken at the midpoint of the stretch's two GPS
+// timestamps, so a stretch that straddles a band boundary goes wherever most of it fell.
+//
 // unixAt[i] is the timestamp of input point i of the trace that produced res.
-func ObservedSpeeds(res *osrm.MatchResponse, unixAt []int64, minConfidence float64) map[Segment]float64 {
-	sums := map[Segment]float64{}
-	counts := map[Segment]int{}
+func ObservedSpeeds(res *osrm.MatchResponse, unixAt []int64, minConfidence float64) map[BandSpeedKey]float64 {
+	sums := map[BandSpeedKey]float64{}
+	counts := map[BandSpeedKey]int{}
 
 	for m, matching := range res.Matchings {
 		if matching.Confidence < minConfidence {
@@ -51,21 +63,24 @@ func ObservedSpeeds(res *osrm.MatchResponse, unixAt []int64, minConfidence float
 			if kmh < minSpeedKmh || kmh > maxSpeedKmh {
 				continue
 			}
+			band := BandAt(time.Unix(unixAt[inputs[k]]+seconds/2, 0))
 			nodes := leg.Annotation.Nodes
 			for i := 0; i+1 < len(nodes); i++ {
 				if nodes[i] == nodes[i+1] {
 					continue
 				}
 				seg := Segment{From: nodes[i], To: nodes[i+1]}
-				sums[seg] += kmh
-				counts[seg]++
+				for _, key := range []BandSpeedKey{{seg, BandAllDay}, {seg, band}} {
+					sums[key] += kmh
+					counts[key]++
+				}
 			}
 		}
 	}
 
-	speeds := make(map[Segment]float64, len(sums))
-	for seg, sum := range sums {
-		speeds[seg] = sum / float64(counts[seg])
+	speeds := make(map[BandSpeedKey]float64, len(sums))
+	for key, sum := range sums {
+		speeds[key] = sum / float64(counts[key])
 	}
 	return speeds
 }

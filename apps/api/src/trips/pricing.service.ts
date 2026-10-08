@@ -5,28 +5,20 @@ import { RideType, RouteSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MapsPlatformService } from '../maps-platform/maps-platform.service';
 import { PricingSettingsService } from '../pricing-settings/pricing-settings.service';
+import { haversineKm, type LatLng } from '../common/geo';
+import {
+  EstimateAccuracyService,
+  type EstimateKind,
+} from '../pricing-settings/estimate-accuracy.service';
+import { bandAt } from '../common/time-bands';
+
+export { haversineKm, type LatLng };
 
 // Every rate, rounding unit and fallback factor here comes from the admin's pricing settings
 // (/admin/pricing): PricingRule and DeliverySizeTierPricingRule per ride type / delivery tier,
 // PricingSettings for the rest. Nothing pricing-related is hard-coded.
 
-const EARTH_RADIUS_KM = 6371;
-
-export function haversineKm(a: LatLng, b: LatLng): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const sinLat = Math.sin(toRad(b.lat - a.lat) / 2);
-  const sinLng = Math.sin(toRad(b.lng - a.lng) / 2);
-  const c =
-    sinLat * sinLat +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
-  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
-}
 const ROUTES_API_TIMEOUT_MS = 4000;
-
-export interface LatLng {
-  lat: number;
-  lng: number;
-}
 
 // Cash is how most fares get paid, so every fare rounds to a unit payable in notes.
 function roundToNearest(amount: number, unit: number): number {
@@ -79,6 +71,7 @@ export class PricingService {
     private config: ConfigService,
     private maps: MapsPlatformService,
     private pricingSettings: PricingSettingsService,
+    private accuracy: EstimateAccuracyService,
   ) {}
 
   settings() {
@@ -104,6 +97,19 @@ export class PricingService {
   // evaluation about a year in. That evaluation needs both answers for the same trip at the
   // same moment, so the maps platform is always asked too (in parallel, so it adds no wait) and
   // its answer is returned as a shadow quote alongside which source was used.
+  // Google's durations ignore live traffic. When the admin enables it, they are scaled by what
+  // our own trips show for this ride type at this time of day (EstimateAccuracyService).
+  private async correctedDuration(
+    kind: EstimateKind,
+    route: { durationMin: number; route: { routeSource: RouteSource } },
+  ) {
+    const durationFactor =
+      route.route.routeSource === RouteSource.GOOGLE
+        ? await this.accuracy.durationFactor(kind, bandAt(new Date()))
+        : 1;
+    return { durationMin: route.durationMin * durationFactor, durationFactor };
+  }
+
   private async routeOrEstimate(points: LatLng[]) {
     const [google, maps, settings] = await Promise.all([
       this.computeGoogleRoute(points),
@@ -261,11 +267,15 @@ export class PricingService {
     destination: LatLng,
     stops: LatLng[] = [],
   ) {
-    const [{ distanceKm, durationMin, settings, route }, rule] =
-      await Promise.all([
-        this.routeOrEstimate([pickup, ...stops, destination]),
-        this.rideRule(rideType),
-      ]);
+    const [routed, rule] = await Promise.all([
+      this.routeOrEstimate([pickup, ...stops, destination]),
+      this.rideRule(rideType),
+    ]);
+    const { distanceKm, settings, route } = routed;
+    const { durationMin, durationFactor } = await this.correctedDuration(
+      rideType,
+      routed,
+    );
 
     const fare =
       rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
@@ -280,6 +290,7 @@ export class PricingService {
       freeWaitMinutes: rule.freeWaitMinutes,
       // Stored on the trip/delivery for the Google-vs-maps-platform evaluation.
       ...route,
+      durationFactor,
     };
   }
 
@@ -344,14 +355,18 @@ export class PricingService {
     destination: LatLng,
     stops: LatLng[] = [],
   ) {
-    const [{ distanceKm, durationMin, settings, route }, rule, surchargeRules] =
-      await Promise.all([
-        this.routeOrEstimate([pickup, ...stops, destination]),
-        this.deliveryRule(sizeTierId),
-        this.prisma.deliverySurchargeRule.findMany({
-          where: { isActive: true },
-        }),
-      ]);
+    const [routed, rule, surchargeRules] = await Promise.all([
+      this.routeOrEstimate([pickup, ...stops, destination]),
+      this.deliveryRule(sizeTierId),
+      this.prisma.deliverySurchargeRule.findMany({
+        where: { isActive: true },
+      }),
+    ]);
+    const { distanceKm, settings, route } = routed;
+    const { durationMin, durationFactor } = await this.correctedDuration(
+      'DELIVERY',
+      routed,
+    );
 
     const baseFare =
       rule.baseFare + rule.perKm * distanceKm + rule.perMinute * durationMin;
@@ -377,6 +392,7 @@ export class PricingService {
       freeWaitMinutes: rule.freeWaitMinutes,
       // Stored on the trip/delivery for the Google-vs-maps-platform evaluation.
       ...route,
+      durationFactor,
     };
   }
 

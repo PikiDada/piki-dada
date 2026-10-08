@@ -92,6 +92,7 @@ export class TripsService {
           routeSource: estimate.routeSource,
           mapsDistanceKm: estimate.mapsDistanceKm,
           mapsDurationMin: estimate.mapsDurationMin,
+          durationFactor: estimate.durationFactor,
           fare: estimate.fare,
           currency: estimate.currency,
           paymentMethod: dto.paymentMethod,
@@ -127,12 +128,6 @@ export class TripsService {
         include: { stops: ORDERED_STOPS },
       });
     });
-
-    this.maps.recordPlaces([
-      { label: dto.pickupAddress, ...pickup },
-      ...stops.map((s) => ({ label: s.address, lat: s.lat, lng: s.lng })),
-      { label: dto.destinationAddress, ...destination },
-    ]);
 
     const [nearbyDrivers, { averageSpeedKmh }] = await Promise.all([
       this.pricing.findNearbyDrivers(dto.rideType, pickup, SEARCH_RADIUS_KM),
@@ -232,6 +227,19 @@ export class TripsService {
 
     if (dto.status === TripStatus.CANCELLED) {
       await this.coupons.release({ tripId });
+    }
+    // The gazetteer learns places where the rider actually arrived (see learnPlace).
+    if (dto.status === TripStatus.ARRIVED) {
+      this.maps.learnPlace(`trip:${tripId}`, trip.pickupAddress, {
+        lat: trip.pickupLat,
+        lng: trip.pickupLng,
+      });
+    }
+    if (dto.status === TripStatus.COMPLETED) {
+      this.maps.learnPlace(`trip:${tripId}`, trip.destinationAddress, {
+        lat: trip.destinationLat,
+        lng: trip.destinationLng,
+      });
     }
 
     if (dto.status === TripStatus.COMPLETED) {
@@ -413,13 +421,10 @@ export class TripsService {
           routeSource: estimate.routeSource,
           mapsDistanceKm: estimate.mapsDistanceKm,
           mapsDurationMin: estimate.mapsDurationMin,
+          durationFactor: estimate.durationFactor,
         },
       }),
     ]);
-
-    this.maps.recordPlaces(
-      dto.stops.map((s) => ({ label: s.address, lat: s.lat, lng: s.lng })),
-    );
 
     const updated = await this.loadTrip(tripId);
     this.broadcast(updated, SOCKET_EVENTS.TRIP_STATUS_UPDATED);
@@ -475,6 +480,7 @@ export class TripsService {
       where: { id: stopId },
       data: { arrivedAt: new Date() },
     });
+    this.maps.learnPlace(`trip:${tripId}`, next.address, next);
     const updated = await this.loadTrip(tripId);
     this.broadcast(updated, SOCKET_EVENTS.TRIP_STATUS_UPDATED);
     return updated;

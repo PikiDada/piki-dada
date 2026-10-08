@@ -226,34 +226,45 @@ func (s *Store) Trace(ctx context.Context, j JourneyRef) ([]osrm.TracePoint, tim
 // Each segment's speed is a running average until it has maxWeight samples, then a moving
 // average with that weight: early on every journey matters, and later the estimate still
 // follows real change (a road resurfaced, a new junction) instead of freezing.
+//
+// speeds holds both the all-day (band 0) and the time-band readings; each is its own row
+// with its own average.
 func (s *Store) RecordLearning(ctx context.Context, j JourneyRef, until time.Time,
-	speeds map[learn.Segment]float64, maxWeight int) error {
+	speeds map[learn.BandSpeedKey]float64, maxWeight int) error {
+	segments := 0 // distinct road segments, not segment-band rows
+	for key := range speeds {
+		if key.Band == learn.BandAllDay {
+			segments++
+		}
+	}
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		batch := &pgx.Batch{}
-		for seg, kmh := range speeds {
+		for key, kmh := range speeds {
 			batch.Queue(`
-				INSERT INTO segment_speeds (from_node, to_node, samples, speed_kmh)
-				VALUES ($1, $2, 1, $3)
-				ON CONFLICT (from_node, to_node) DO UPDATE SET
+				INSERT INTO segment_speeds (from_node, to_node, band, samples, speed_kmh)
+				VALUES ($1, $2, $5, 1, $3)
+				ON CONFLICT (from_node, to_node, band) DO UPDATE SET
 					samples    = segment_speeds.samples + 1,
 					speed_kmh  = segment_speeds.speed_kmh
 					           + (EXCLUDED.speed_kmh - segment_speeds.speed_kmh)
 					           / LEAST(segment_speeds.samples + 1, $4),
 					updated_at = now()`,
-				seg.From, seg.To, kmh, maxWeight)
+				key.From, key.To, kmh, maxWeight, key.Band)
 		}
 		batch.Queue(`
 			UPDATE journeys SET processed_until = $3, segments_observed = segments_observed + $4
 			WHERE source = $1 AND journey_id = $2`,
-			j.Source, j.JourneyID, until, len(speeds))
+			j.Source, j.JourneyID, until, segments)
 		return tx.SendBatch(ctx, batch).Close()
 	})
 }
 
+// SpeedsForExport returns the all-day speeds only: OSRM holds one speed per segment, and the
+// time-band speeds are applied per request instead (see BandSpeeds).
 func (s *Store) SpeedsForExport(ctx context.Context, minSamples int) ([]learn.SegmentSpeed, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT from_node, to_node, speed_kmh FROM segment_speeds
-		WHERE samples >= $1 ORDER BY from_node, to_node`, minSamples)
+		WHERE band = 0 AND samples >= $1 ORDER BY from_node, to_node`, minSamples)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +273,37 @@ func (s *Store) SpeedsForExport(ctx context.Context, minSamples int) ([]learn.Se
 		err := r.Scan(&sp.From, &sp.To, &sp.SpeedKmh)
 		return sp, err
 	})
+}
+
+// BandSpeeds returns the learned speed (km/h) in the given time band for those of segs seen on
+// at least minSamples journeys in that band; segments without one are left out. One query
+// for the whole route, matched against segment_speeds' primary key.
+func (s *Store) BandSpeeds(ctx context.Context, segs []learn.Segment, band, minSamples int) (map[learn.Segment]float64, error) {
+	from := make([]int64, len(segs))
+	to := make([]int64, len(segs))
+	for i, seg := range segs {
+		from[i], to[i] = seg.From, seg.To
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT sp.from_node, sp.to_node, sp.speed_kmh
+		FROM unnest($1::bigint[], $2::bigint[]) AS route (from_node, to_node)
+		JOIN segment_speeds sp
+		  ON sp.from_node = route.from_node AND sp.to_node = route.to_node AND sp.band = $3
+		WHERE sp.samples >= $4`, from, to, band, minSamples)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	speeds := make(map[learn.Segment]float64)
+	for rows.Next() {
+		var seg learn.Segment
+		var kmh float64
+		if err := rows.Scan(&seg.From, &seg.To, &kmh); err != nil {
+			return nil, err
+		}
+		speeds[seg] = kmh
+	}
+	return speeds, rows.Err()
 }
 
 func (s *Store) RecordExport(ctx context.Context, segments int) error {
@@ -341,7 +383,8 @@ type Stats struct {
 }
 
 // Stats shows whether the platform is actually learning: segmentsInRouting is how many road
-// segments OSRM now routes with observed speeds instead of guesses.
+// segments OSRM now routes with observed speeds instead of guesses. Both count all-day
+// speeds only, so a segment isn't counted again for every time band it was seen in.
 func (s *Store) Stats(ctx context.Context, minSamples int) (Stats, error) {
 	var st Stats
 	err := s.db.QueryRow(ctx, `
@@ -349,8 +392,8 @@ func (s *Store) Stats(ctx context.Context, minSamples int) (Stats, error) {
 			(SELECT count(*) FROM pings),
 			(SELECT count(*) FROM journeys),
 			(SELECT count(*) FROM journeys WHERE processed_until IS NOT NULL),
-			(SELECT count(*) FROM segment_speeds),
-			(SELECT count(*) FROM segment_speeds WHERE samples >= $1),
+			(SELECT count(*) FROM segment_speeds WHERE band = 0),
+			(SELECT count(*) FROM segment_speeds WHERE band = 0 AND samples >= $1),
 			(SELECT count(*) FROM places),
 			(SELECT exported_at FROM exports ORDER BY id DESC LIMIT 1),
 			(SELECT segment_count FROM exports ORDER BY id DESC LIMIT 1)`, minSamples,

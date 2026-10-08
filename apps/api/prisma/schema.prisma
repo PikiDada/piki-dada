@@ -229,6 +229,9 @@ model Trip {
   // while the platform isn't running.
   mapsDistanceKm     Float?
   mapsDurationMin    Float?
+  // The learned correction applied to Google's duration (1 = none). durationMin already
+  // includes it; Google's own answer is durationMin / durationFactor.
+  durationFactor     Float         @default(1)
   // Ground truth, computed from locationPings once the trip reaches COMPLETED -- distanceKm/
   // durationMin above are the pre-trip ESTIMATE used for pricing, these are what actually
   // happened. Null until completion, and also null if too few pings were recorded to measure
@@ -360,6 +363,7 @@ model Delivery {
   routeSource          RouteSource?
   mapsDistanceKm       Float?
   mapsDurationMin      Float?
+  durationFactor       Float             @default(1)
   actualDistanceKm     Float?
   actualDurationMin    Float?
   // Same as Trip.waitingFee / waitingPerMinute / freeWaitMinutes -- see their comments.
@@ -549,6 +553,14 @@ model PricingSettings {
   // and duration (and rider ETAs) from this average speed.
   roadDistanceFallbackFactor Float                @default(1.3)
   averageSpeedKmh            Float                @default(28)
+  // Google is asked for durations without live traffic (the cheaper request). Our own trips show
+  // how far off that runs per ride type and time of day (/admin/estimate-accuracy). When enabled,
+  // Google durations are multiplied by that learned factor, but only for a ride type and time
+  // band with at least durationCorrectionMinTrips trips, and never beyond durationCorrectionMax
+  // (or below its inverse).
+  durationCorrectionEnabled  Boolean              @default(false)
+  durationCorrectionMinTrips Int                  @default(30)
+  durationCorrectionMax      Float                @default(2)
   updatedAt                  DateTime             @updatedAt
 }
 

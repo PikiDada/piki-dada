@@ -99,6 +99,12 @@ Booking a delivery: `categoryId`, `sizeTierId`, the pickup and drop-off contact 
 
 Statuses: `REQUESTED → SEARCHING → ACCEPTED → ARRIVED_PICKUP → PICKED_UP → ARRIVED_DROPOFF → DELIVERED`, or `CANCELLED`.
 
+## Address search: `/places`
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/places/search?q=` | Signed in | `{ places: [{ label, lat, lng }] }` from our own gazetteer, most-used first. Empty until the maps platform runs; the booking page then falls back to Google |
+
 ## Coupons: `/coupons`
 
 | Method | Path | Who | Notes |
@@ -150,7 +156,8 @@ Statuses: `REQUESTED → SEARCHING → ACCEPTED → ARRIVED_PICKUP → PICKED_UP
 | Users | `GET users`, `GET users/:id`, `PATCH users/:id/suspend`, `PATCH users/:id/activate`, `PATCH users/:id/promote`, `DELETE users/:id` |
 | Rides and deliveries | `GET trips`, `GET deliveries` |
 | Ride pricing | `GET pricing`, `PATCH pricing/:rideType` (base fare, per km, per minute, waiting rate, free waiting minutes) |
-| Pricing settings | `GET pricing-settings`, `PATCH pricing-settings` (rounding unit, commission, unvisited stops policy, fallback factor, average speed) |
+| Pricing settings | `GET pricing-settings`, `PATCH pricing-settings` (rounding unit, commission, unvisited stops policy, fallback factor, average speed, Google duration correction on/off, trips needed, largest correction) |
+| Estimate accuracy | `GET estimate-accuracy`: real trips against Google's and our map's estimates, per ride type and time of day, with the correction each would get |
 | Delivery pricing | `GET/POST delivery-categories`, `PATCH delivery-categories/:id`, `GET/POST delivery-size-tiers`, `PATCH delivery-size-tiers/:id`, `PATCH delivery-size-tiers/:id/pricing`, `GET delivery-surcharges`, `PATCH delivery-surcharges/:key` |
 | Coupons | `GET coupons`, `POST coupons` (`{ code, discountAmount? \| discountPercent?, maxUses?, expiresAt? }`), `PATCH coupons/:id/deactivate` |
 | Push | `POST push/broadcast`, `GET push/history` |

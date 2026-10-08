@@ -170,3 +170,33 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
   Kampala time (`docker compose logs osrm`).
 - `ufw allow 80,443,22/tcp && ufw enable` (or equivalent) so nothing but SSH and the reverse
   proxy is reachable from the internet.
+
+## Our own map display (optional switch)
+
+The trip maps can be drawn from OpenStreetMap data on this server instead of by Google. It's
+off by default; nothing changes until you build the web app with the switch on. Address
+search (Google Places) and pricing are unaffected either way.
+
+> **Don't switch while address search still uses Google Places for the chosen location:**
+> Google's terms don't allow showing Google Places results on a non-Google map. Switch once
+> addresses come from our own gazetteer (or Google results are no longer plotted).
+
+1. **Make the Uganda map file** with the [`pmtiles` CLI](https://github.com/protomaps/go-pmtiles/releases)
+   (one binary). Pick the newest daily world build listed at https://build.protomaps.com
+   (named like `20261007.pmtiles`) and cut Uganda out of it; only the needed parts are
+   downloaded, and the result is a few hundred MB at most:
+   `pmtiles extract https://build.protomaps.com/20261007.pmtiles uganda.pmtiles --bbox=29.5,-1.5,35.1,4.3`
+2. **Put it on the server** in `./data/tiles/` next to `docker-compose.yml`
+   (`mkdir -p data/tiles && mv uganda.pmtiles data/tiles/`). Caddy serves it at
+   `https://pikidada.com/tiles/uganda.pmtiles`; no restart needed. Check with
+   `curl -sI -H 'Range: bytes=0-99' https://pikidada.com/tiles/uganda.pmtiles` (expect `206`).
+3. **Turn it on** in the root `.env` and rebuild the website:
+   `NEXT_PUBLIC_MAP_PROVIDER="osm"`, then `docker compose up -d --build caddy`.
+   `NEXT_PUBLIC_MAP_TILES_URL` defaults to `/tiles/uganda.pmtiles` on the same site; the map's
+   fonts and icons (`NEXT_PUBLIC_MAP_GLYPHS_URL`, `NEXT_PUBLIC_MAP_SPRITE_URL`) default to
+   Protomaps' public copies on GitHub Pages. All four are described in `apps/web/.env.example`.
+4. **To update the map data** later, extract a fresh file under a new name (e.g.
+   `uganda-2027-01.pmtiles`), point `NEXT_PUBLIC_MAP_TILES_URL` at it and rebuild: browsers
+   cache tiles for a week, and a file replaced in place would mix old and new pieces.
+5. **To switch back**, empty `NEXT_PUBLIC_MAP_PROVIDER` (or set it to `"google"`) and run
+   `docker compose up -d --build caddy` again. The map file can stay where it is.

@@ -87,8 +87,8 @@ func (w *Worker) learnJourney(ctx context.Context, j store.JourneyRef) error {
 		return w.store.RecordLearning(ctx, j, time.Now(), nil, w.cfg.MaxWeight)
 	}
 
-	sums := map[learn.Segment]float64{}
-	counts := map[learn.Segment]int{}
+	sums := map[learn.BandSpeedKey]float64{}
+	counts := map[learn.BandSpeedKey]int{}
 	for _, window := range learn.Windows(learn.Clean(trace), osrm.MaxMatchPoints) {
 		if len(window) < 2 {
 			continue
@@ -104,21 +104,21 @@ func (w *Worker) learnJourney(ctx context.Context, j store.JourneyRef) error {
 		for i, p := range window {
 			unix[i] = p.Unix
 		}
-		for seg, kmh := range learn.ObservedSpeeds(res, unix, w.cfg.MinConfidence) {
-			sums[seg] += kmh
-			counts[seg]++
+		for key, kmh := range learn.ObservedSpeeds(res, unix, w.cfg.MinConfidence) {
+			sums[key] += kmh
+			counts[key]++
 		}
 	}
 
-	speeds := make(map[learn.Segment]float64, len(sums))
-	for seg, sum := range sums {
-		speeds[seg] = sum / float64(counts[seg])
+	speeds := make(map[learn.BandSpeedKey]float64, len(sums))
+	for key, sum := range sums {
+		speeds[key] = sum / float64(counts[key])
 	}
 	if err := w.store.RecordLearning(ctx, j, latest, speeds, w.cfg.MaxWeight); err != nil {
 		return err
 	}
 	w.log.Info("learned from journey", "source", j.Source, "journey", j.JourneyID,
-		"points", len(trace), "segments", len(speeds))
+		"points", len(trace), "speeds", len(speeds))
 	return nil
 }
 

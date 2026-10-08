@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@protomaps/basemaps": "^5.7.2",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-label": "^2.1.10",
     "@radix-ui/react-select": "^2.3.1",
@@ -19,7 +20,9 @@
     "clsx": "^2.1.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.21.0",
+    "maplibre-gl": "^6.13.0",
     "next": "16.2.9",
+    "pmtiles": "^4.5.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "socket.io-client": "^4.8.3",

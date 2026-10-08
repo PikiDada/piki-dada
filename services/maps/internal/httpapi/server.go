@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"pikidada.com/mapsplatform/internal/learn"
 	"pikidada.com/mapsplatform/internal/osrm"
 	"pikidada.com/mapsplatform/internal/store"
 )
@@ -33,6 +34,7 @@ type Store interface {
 	RecordPlaces(ctx context.Context, source string, in []store.PlaceInput) error
 	SearchPlaces(ctx context.Context, query string, limit int) ([]store.Place, error)
 	Stats(ctx context.Context, minSamples int) (store.Stats, error)
+	BandSpeeds(ctx context.Context, segs []learn.Segment, band, minSamples int) (map[learn.Segment]float64, error)
 }
 
 type Router interface {
@@ -172,6 +174,20 @@ func (s *Server) searchPlaces(w http.ResponseWriter, r *http.Request) {
 
 type routeRequest struct {
 	Points []osrm.Point `json:"points"`
+	// DepartAt (RFC3339) picks the time band the route is timed for; now when omitted.
+	DepartAt *time.Time `json:"departAt"`
+}
+
+// routeResponse keeps the original distanceKm and durationMin, so older callers are
+// unaffected; durationMin is now timed for the departure's time band.
+type routeResponse struct {
+	DistanceKm  float64 `json:"distanceKm"`
+	DurationMin float64 `json:"durationMin"`
+	// TimeBand is the learn.Band* the route was timed for.
+	TimeBand int `json:"timeBand"`
+	// LearnedShare is the fraction (0-1) of the distance timed from speeds learned for that
+	// band; the rest is OSRM's all-day estimate.
+	LearnedShare float64 `json:"learnedShare"`
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
@@ -195,10 +211,34 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "routing unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]float64{
-		"distanceKm":  route.DistanceM / 1000,
-		"durationMin": route.DurationS / 60,
+	depart := time.Now()
+	if req.DepartAt != nil {
+		depart = *req.DepartAt
+	}
+	band := learn.BandAt(depart)
+	durationS, share := s.timeForBand(r.Context(), route, band)
+	writeJSON(w, http.StatusOK, routeResponse{
+		DistanceKm:   route.DistanceM / 1000,
+		DurationMin:  durationS / 60,
+		TimeBand:     band,
+		LearnedShare: share,
 	})
+}
+
+// timeForBand re-times the route with the speeds learned for band. It is an improvement, not
+// a requirement: if the lookup fails the route keeps OSRM's own duration rather than failing
+// the request.
+func (s *Server) timeForBand(ctx context.Context, route osrm.Route, band int) (durationS, learnedShare float64) {
+	segs := learn.RouteSegments(route.Legs)
+	if len(segs) == 0 {
+		return route.DurationS, 0
+	}
+	speeds, err := s.store.BandSpeeds(ctx, segs, band, s.minSamples)
+	if err != nil {
+		s.log.Warn("looking up time-band speeds; using OSRM's duration", "err", err)
+		return route.DurationS, 0
+	}
+	return learn.AdjustDuration(route, speeds)
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {

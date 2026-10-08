@@ -13,7 +13,7 @@ pikidada.com, www.pikidada.com {
 	# so there's no injection point for it to matter. files.pikidada.com serves uploaded
 	# documents from MinIO; the Cloudinary/Supabase hosts stay for images uploaded before the move.
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://files.pikidada.com https://res.cloudinary.com https://*.supabase.co https://*.googleusercontent.com; connect-src 'self' https://api.pikidada.com wss://api.pikidada.com https://maps.googleapis.com https://places.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://files.pikidada.com https://res.cloudinary.com https://*.supabase.co https://*.googleusercontent.com; connect-src 'self' https://api.pikidada.com wss://api.pikidada.com https://maps.googleapis.com https://places.googleapis.com https://protomaps.github.io; worker-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		X-Frame-Options "DENY"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -24,8 +24,16 @@ pikidada.com, www.pikidada.com {
 	# re-checked so a new deploy is picked up straight away.
 	@hashed path /_next/static/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"
-	@unhashed not path /_next/static/*
+	@unhashed not path /_next/static/* /tiles/*
 	header @unhashed Cache-Control "no-cache"
+
+	# Map tiles for our own map display (deploy/README.md, "Our own map display"): one large
+	# .pmtiles file, mounted at /srv/tiles from ./data/tiles by docker-compose.yml, so updating
+	# it needs no rebuild. The map reads it in small pieces with byte-range requests, which
+	# file_server below handles; encode leaves it alone (not a compressible content type).
+	# Cached for a week: give an updated file a new name rather than replacing it in place.
+	@tiles path /tiles/*
+	header @tiles Cache-Control "public, max-age=604800"
 
 	# Detail pages used to take the id in the path (/passenger/trip/<id>). Old links still
 	# arrive: bookmarks, notifications, and payment-provider return URLs issued before the

@@ -10,7 +10,11 @@ function setup(trip?: object, delivery?: object, mapsEnabled = true) {
     tripLocationPing: { create: jest.fn() },
     deliveryLocationPing: { create: jest.fn() },
   };
-  const maps = { recordPing: jest.fn(), enabled: mapsEnabled };
+  const maps = {
+    recordPing: jest.fn(),
+    notePosition: jest.fn(),
+    enabled: mapsEnabled,
+  };
   const service = new JourneyTrackingService(prisma as never, maps as never);
   return { service, prisma, maps };
 }

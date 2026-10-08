@@ -30,6 +30,12 @@ Google stays primary on purpose. About a year after the Hetzner move we compare 
 | `mapsDistanceKm`, `mapsDurationMin` | What the maps platform answered for the same route at the same moment ("shadow quote"). Empty until it runs on Hetzner |
 | `actualDistanceKm`, `actualDurationMin` | What really happened, from the rider's GPS: pickup to destination for rides, pickup to the final drop-off for deliveries. Time spent waiting at stops is left out, as the estimates leave it out |
 
+**Admin → Estimate accuracy** (`/admin/estimate-accuracy`) shows these side by side for the last 60 days, per ride type and time of day (night, morning rush, midday, evening rush, Kampala time).
+
+### Correcting Google's times
+
+Google is asked for trip times without live traffic, the cheaper request. On the Estimate accuracy page the admin can switch on a correction: each new quote's time is multiplied by what our own trips show for that ride type and time of day (e.g. × 1.4 when evening Economy trips take 40% longer than Google says). It only applies once a ride type and time of day has enough trips (30 by default), never goes beyond the cap (× 2 by default, either way), and is off until switched on. Each trip records the factor used (`durationFactor`), so Google's own answer is never lost.
+
 The raw GPS points are kept too, so a better measure can be recomputed later. Trips with stops that were never reached should be left out of the comparison, because their estimate covered a longer route than was driven.
 
 ## 2. Stops

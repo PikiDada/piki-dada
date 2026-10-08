@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { haversineKm } from '../common/geo';
 
 // Client for the independent maps platform (services/maps). Piki Dada is one of its sources:
 // it sends GPS traces and resolved addresses in, and asks it for routes. Unconfigured
@@ -18,6 +19,11 @@ const SOURCE = 'pikidada';
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_BATCH = 500;
 const TIMEOUT_MS = 4000;
+// A rider's position is only trusted as "where this place is" if it was reported this recently
+// and lands this close to where the customer put the pin. Further away usually means the rider
+// tapped Arrived early or late, or the customer met them somewhere else.
+const POSITION_FRESH_MS = 2 * 60 * 1000;
+const MAX_PLACE_OFFSET_KM = 0.3;
 
 export interface LatLng {
   lat: number;
@@ -37,6 +43,7 @@ export class MapsPlatformService implements OnModuleInit, OnModuleDestroy {
   private readonly baseUrl?: string;
   private readonly token?: string;
   private pending: PendingPing[] = [];
+  private lastPositions = new Map<string, LatLng & { at: number }>();
   private timer?: NodeJS.Timeout;
 
   constructor(config: ConfigService) {
@@ -70,9 +77,55 @@ export class MapsPlatformService implements OnModuleInit, OnModuleDestroy {
     if (this.pending.length >= MAX_BATCH) void this.flushPings();
   }
 
-  // Every address a customer picks becomes a gazetteer entry: the platform's own address
-  // search, which over time needs Google Places less and less.
-  recordPlaces(places: (LatLng & { label: string })[]) {
+  // The rider's latest position on a journey, for learnPlace.
+  notePosition(journeyId: string, point: LatLng, at: Date) {
+    if (!this.enabled) return;
+    this.lastPositions.set(journeyId, { ...point, at: at.getTime() });
+    if (this.lastPositions.size > 5000) {
+      const stale = Date.now() - 10 * 60 * 1000;
+      for (const [id, p] of this.lastPositions) {
+        if (p.at < stale) this.lastPositions.delete(id);
+      }
+    }
+  }
+
+  // Called when the rider arrives at a pickup, stop or drop-off. The gazetteer learns the
+  // place's name at the rider's own GPS position, not the coordinates the customer's address
+  // search returned: it is where people really meet, it is our own data, and Google's terms
+  // don't allow keeping Google Places coordinates. While the platform isn't running, the same
+  // places are derived from stored pings by scripts/replay-pings.ts.
+  learnPlace(journeyId: string, label: string, booked: LatLng) {
+    const position = this.lastPositions.get(journeyId);
+    if (!position || Date.now() - position.at > POSITION_FRESH_MS) return;
+    if (haversineKm(position, booked) > MAX_PLACE_OFFSET_KM) return;
+    this.recordPlaces([{ label, lat: position.lat, lng: position.lng }]);
+  }
+
+  // Our own address search: places riders have actually reached, most-used first. Empty when
+  // the platform isn't running, so callers fall back to Google.
+  async searchPlaces(query: string): Promise<(LatLng & { label: string })[]> {
+    if (!this.enabled || query.trim().length < 2) return [];
+    try {
+      const res = await axios.get<{ places?: (LatLng & { label: string })[] }>(
+        `${this.baseUrl}/v1/places/search`,
+        {
+          params: { q: query, limit: 5 },
+          timeout: 1500,
+          headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+        },
+      );
+      return (res.data?.places ?? []).map(({ label, lat, lng }) => ({
+        label,
+        lat,
+        lng,
+      }));
+    } catch (err) {
+      this.warn('place search', err);
+      return [];
+    }
+  }
+
+  private recordPlaces(places: (LatLng & { label: string })[]) {
     // "Current location" is the booking page's label for a GPS fix, not a place name.
     const named = places.filter(
       (p) =>

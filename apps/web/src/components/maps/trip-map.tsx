@@ -7,6 +7,15 @@ import { useMapsReady } from "./map-provider";
 
 const GoogleMap = dynamic(() => import("@react-google-maps/api").then((m) => m.GoogleMap), { ssr: false });
 const Marker = dynamic(() => import("@react-google-maps/api").then((m) => m.Marker), { ssr: false });
+// Our own OpenStreetMap-based map (MapLibre). A separate chunk, only fetched when it's switched
+// on, so the default Google build doesn't carry it.
+const OsmTripMap = dynamic(() => import("./trip-map-osm").then((m) => m.OsmTripMap), {
+  ssr: false,
+  loading: () => <MapLoading height="100%" />,
+});
+
+// "google" (default) or "osm", fixed at build time. Read deploy/README.md before switching.
+const MAP_PROVIDER = process.env.NEXT_PUBLIC_MAP_PROVIDER === "osm" ? "osm" : "google";
 
 interface TripMapProps {
   pickup?: LatLng;
@@ -27,7 +36,30 @@ function pinIcon(label: string, background: string): google.maps.Icon {
   };
 }
 
-export function TripMap({
+function MapLoading({ height }: { height: string }) {
+  return (
+    <div
+      style={{ height }}
+      className="flex items-center justify-center rounded-2xl bg-neutral-100 text-sm text-neutral-600"
+    >
+      Loading map...
+    </div>
+  );
+}
+
+export function TripMap(props: TripMapProps) {
+  if (MAP_PROVIDER === "osm") {
+    const { height = "300px", pickup, driverLocation } = props;
+    return (
+      <div style={{ height }}>
+        <OsmTripMap {...props} height="100%" center={pickup ?? driverLocation ?? defaultCenter} />
+      </div>
+    );
+  }
+  return <GoogleTripMap {...props} />;
+}
+
+function GoogleTripMap({
   pickup,
   destination,
   stops = [],
@@ -45,14 +77,7 @@ export function TripMap({
   );
 
   if (!isLoaded) {
-    return (
-      <div
-        style={{ height }}
-        className="flex items-center justify-center rounded-2xl bg-neutral-100 text-sm text-neutral-600"
-      >
-        Loading map...
-      </div>
-    );
+    return <MapLoading height={height} />;
   }
 
   const center = pickup ?? driverLocation ?? defaultCenter;

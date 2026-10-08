@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"testing"
+	"time"
 
 	"pikidada.com/mapsplatform/internal/osrm"
 )
@@ -41,18 +42,40 @@ func near(a, b float64) bool { return math.Abs(a-b) < 0.01 }
 func TestObservedSpeedsUsesGPSTimestampsAcrossDroppedPoints(t *testing.T) {
 	speeds := ObservedSpeeds(parse(t, matchJSON), []int64{0, 60, 90, 180}, 0.5)
 
-	want := map[Segment]float64{
-		{10, 11}: 30,
-		{11, 12}: 30,
-		{12, 13}: 12,
+	// Unix time 0 is 03:00 in Kampala: night. Each reading counts all-day and for its band.
+	want := map[BandSpeedKey]float64{}
+	for seg, kmh := range map[Segment]float64{{10, 11}: 30, {11, 12}: 30, {12, 13}: 12} {
+		want[BandSpeedKey{seg, BandAllDay}] = kmh
+		want[BandSpeedKey{seg, BandNight}] = kmh
 	}
 	if len(speeds) != len(want) {
-		t.Fatalf("got %d segments, want %d: %v", len(speeds), len(want), speeds)
+		t.Fatalf("got %d speeds, want %d: %v", len(speeds), len(want), speeds)
 	}
-	for seg, kmh := range want {
-		if !near(speeds[seg], kmh) {
-			t.Errorf("segment %v: got %.2f km/h, want %.2f", seg, speeds[seg], kmh)
+	for key, kmh := range want {
+		if !near(speeds[key], kmh) {
+			t.Errorf("%v: got %.2f km/h, want %.2f", key, speeds[key], kmh)
 		}
+	}
+}
+
+func TestObservedSpeedsCreditsTheBandAtEachStretchMidpoint(t *testing.T) {
+	// 05:59:00 Kampala. The first stretch (60 s) has its midpoint at 05:59:30, still night;
+	// the second (120 s, from 06:00:00) is morning rush.
+	start := time.Date(2026, 10, 5, 2, 59, 0, 0, time.UTC).Unix()
+	speeds := ObservedSpeeds(parse(t, matchJSON), []int64{start, start + 60, start + 90, start + 180}, 0.5)
+
+	for key, kmh := range map[BandSpeedKey]float64{
+		{Segment{10, 11}, BandNight}:       30,
+		{Segment{12, 13}, BandMorningRush}: 12,
+		{Segment{10, 11}, BandAllDay}:      30,
+		{Segment{12, 13}, BandAllDay}:      12,
+	} {
+		if !near(speeds[key], kmh) {
+			t.Errorf("%v: got %.2f km/h, want %.2f", key, speeds[key], kmh)
+		}
+	}
+	if _, ok := speeds[BandSpeedKey{Segment{12, 13}, BandNight}]; ok {
+		t.Errorf("the morning stretch was also credited to night: %v", speeds)
 	}
 }
 
@@ -65,7 +88,7 @@ func TestObservedSpeedsSkipsLowConfidenceMatches(t *testing.T) {
 func TestObservedSpeedsIgnoresStandingStill(t *testing.T) {
 	// 500 m over 20 minutes is 1.5 km/h: parked or waiting, not a road speed.
 	got := ObservedSpeeds(parse(t, matchJSON), []int64{0, 1200, 1300, 1400}, 0.5)
-	if _, ok := got[Segment{10, 11}]; ok {
+	if _, ok := got[BandSpeedKey{Segment{10, 11}, BandAllDay}]; ok {
 		t.Fatalf("a near-stationary leg should not produce a speed: %v", got)
 	}
 }
@@ -85,8 +108,10 @@ func TestObservedSpeedsAveragesRepeatedSegmentsWithinOneTrace(t *testing.T) {
 	}`)
 	// 100 m in 10 s = 36 km/h, then 200 m in 10 s = 72 km/h -> one reading of 54.
 	got := ObservedSpeeds(res, []int64{0, 10, 20}, 0.5)
-	if !near(got[Segment{1, 2}], 54) {
-		t.Fatalf("got %.2f, want 54", got[Segment{1, 2}])
+	for _, band := range []int{BandAllDay, BandNight} {
+		if key := (BandSpeedKey{Segment{1, 2}, band}); !near(got[key], 54) {
+			t.Fatalf("%v: got %.2f, want 54", key, got[key])
+		}
 	}
 }
 

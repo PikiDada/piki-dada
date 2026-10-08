@@ -1,4 +1,4 @@
-import { haversineKm, type LatLng } from './pricing.service';
+import { haversineKm, type LatLng } from '../common/geo';
 
 // Turns a journey's GPS trace into the distance and driving time it actually took, to compare
 // against what Google and the maps platform estimated. The raw pings are kept, so a better

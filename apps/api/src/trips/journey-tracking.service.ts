@@ -49,6 +49,9 @@ export class JourneyTrackingService {
       return false;
     }
     const now = new Date();
+    const journeyId = ref.tripId
+      ? `trip:${ref.tripId}`
+      : `delivery:${ref.deliveryId}`;
 
     if (ref.tripId) {
       const trip = await this.prisma.trip.findUnique({
@@ -56,7 +59,7 @@ export class JourneyTrackingService {
         select: { status: true, driver: { select: { userId: true } } },
       });
       if (!trip || trip.driver?.userId !== driverUserId) return false;
-      const journeyId = `trip:${ref.tripId}`;
+      this.maps.notePosition(journeyId, location, now);
       if (
         TRIP_TRACKED_STATUSES.includes(trip.status) &&
         this.due(journeyId, now)
@@ -84,7 +87,7 @@ export class JourneyTrackingService {
         select: { status: true, rider: { select: { userId: true } } },
       });
       if (!delivery || delivery.rider?.userId !== driverUserId) return false;
-      const journeyId = `delivery:${ref.deliveryId}`;
+      this.maps.notePosition(journeyId, location, now);
       if (
         DELIVERY_TRACKED_STATUSES.includes(delivery.status) &&
         this.due(journeyId, now)
