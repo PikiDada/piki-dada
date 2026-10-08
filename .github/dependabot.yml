@@ -1,5 +1,8 @@
 version: 2
 updates:
+  # Minor and patch updates arrive as two grouped PRs (production, development). Major
+  # versions are left out of the groups, so each arrives as its own PR: they usually need code
+  # changes (e.g. Prisma 7, NestJS 12) and are done one at a time, not bundled with 50 others.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -8,8 +11,18 @@ updates:
     groups:
       production-dependencies:
         dependency-type: "production"
+        update-types: ["minor", "patch"]
       development-dependencies:
         dependency-type: "development"
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "gomod"
+    directory: "/services/maps"
+    schedule:
+      interval: "weekly"
+    groups:
+      go-dependencies:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
