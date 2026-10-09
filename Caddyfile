@@ -25,7 +25,7 @@ http://pikidada.com, http://www.pikidada.com {
 	# script-src keeps 'unsafe-inline' because Next.js's own hydration scripts need it (a
 	# stricter nonce policy broke Next's chunk loading); the app has no dangerouslySetInnerHTML,
 	# so there's no injection point for it to matter. files.pikidada.com serves uploaded
-	# documents from MinIO; the Cloudinary/Supabase hosts stay for images uploaded before the move.
+	# documents from the uploads volume; the Cloudinary/Supabase hosts stay for images uploaded before the move.
 	header {
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://files.pikidada.com https://res.cloudinary.com https://*.supabase.co https://*.googleusercontent.com; connect-src 'self' https://api.pikidada.com wss://api.pikidada.com https://maps.googleapis.com https://places.googleapis.com https://protomaps.github.io; worker-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		X-Frame-Options "DENY"
@@ -77,8 +77,19 @@ http://api.pikidada.com {
 	reverse_proxy api:4001
 }
 
-# Public read access for driver-document images the admin UI loads directly as <img src>
-# (see uploads.service.ts / MINIO_PUBLIC_URL). Needs its own DNS record (deploy/README.md).
+# Uploaded files (rider documents, delivery photos), straight from the uploads volume. The
+# admin pages load them by link (uploads.service.ts / UPLOADS_PUBLIC_URL). Needs its own DNS
+# record (deploy/README.md).
 http://files.pikidada.com {
-	reverse_proxy minio:9000
+	root * /uploads
+	header {
+		# Each file is served as the type its extension says (uploads.service.ts picks the
+		# extension from the type the upload was accepted as), and the browser must not guess
+		# otherwise or run anything in it.
+		X-Content-Type-Options "nosniff"
+		Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self' https://pikidada.com https://www.pikidada.com"
+		Cache-Control "private, max-age=86400"
+		Referrer-Policy "no-referrer"
+	}
+	file_server
 }

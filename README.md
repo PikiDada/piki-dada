@@ -14,7 +14,7 @@ Boda, Economy and Comfort rides plus parcel delivery, with passenger, rider and 
 | Auth | JWT access token + rotating refresh cookie, Google OAuth |
 | Payments | Cash, Stripe, Flutterwave, rider wallet ledger |
 | Notifications | In-app feed, web push, FCM. Email over SMTP (SendGrid as fallback) |
-| File storage | MinIO (S3-compatible) on Hetzner; Supabase Storage as fallback until then |
+| File storage | The server's disk on Hetzner (a Docker volume served as files.pikidada.com, backed up nightly); Supabase Storage until the move |
 
 ## Docs
 

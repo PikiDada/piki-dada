@@ -92,12 +92,13 @@ door with HTTPS, Postgres, backups, deploy scripts) live in the box repo,
    prints), sets up the deploy key for this repo, and clones it to `/srv/apps/pikidada`.
 4. **Settings**, in `/srv/apps/pikidada`:
    ```sh
-   cp .env.example .env                     # PIKIDADA_DB_PASSWORD, MINIO_*, MAPS_PLATFORM_TOKEN, NEXT_PUBLIC_*
+   cp .env.example .env                     # PIKIDADA_DB_PASSWORD, MAPS_PLATFORM_TOKEN, NEXT_PUBLIC_*
    cp apps/api/.env.example apps/api/.env    # every secret/key it lists
    ```
    In `apps/api/.env`: `DATABASE_URL` and `DIRECT_URL` are both
-   `postgresql://pikidada:<that password>@postgres:5432/pikidada`, and `MINIO_PUBLIC_URL` is
-   `https://files.pikidada.com`.
+   `postgresql://pikidada:<that password>@postgres:5432/pikidada`, and `UPLOADS_PUBLIC_URL` is
+   `https://files.pikidada.com`. Uploaded files are kept on the server's disk (the `uploads`
+   volume), so there's no storage service to set up.
 5. **Email is Amazon SES, not self-hosted**: verify `pikidada.com` in the SES console (it
    gives you exact SPF/DKIM records; confirm they show "verified" there), request production
    access, create SMTP credentials, fill in `SMTP_*` in `apps/api/.env`. See that file's
@@ -152,18 +153,14 @@ step 1 isn't copied.
    ```
 2. **Move uploaded files off Supabase**, only after that final restore, since a later restore
    would bring the old links back. `scripts/migrate-storage.ts` copies every file from
-   Supabase Storage into MinIO, then rewrites the database's file links to
-   `files.pikidada.com`. It only rewrites if every file copied, and is safe to re-run. It needs
-   both the database and MinIO, which sit on different private networks, so it runs in a
-   throwaway container joined to both (values as in the script's usage block; `DATABASE_URL`
-   is the new `postgres:5432` one):
+   Supabase Storage into the `uploads` volume, then rewrites the database's file links to
+   `files.pikidada.com`. It only rewrites if every file copied, and is safe to re-run (values
+   from the current API settings; `DATABASE_URL` is the new `postgres:5432` one):
    ```sh
-   docker create --name oneoff --network db -v /srv/apps/pikidada:/app -w /app \
+   docker run --rm --network db -v /srv/apps/pikidada:/app -w /app -v pikidada_uploads:/uploads \
      -e SUPABASE_URL=... -e SUPABASE_SERVICE_ROLE_KEY=... -e DATABASE_URL=... \
-     -e MINIO_ENDPOINT=http://minio:9000 -e MINIO_BUCKET=driver-documents \
-     -e MINIO_ACCESS_KEY=... -e MINIO_SECRET_KEY=... -e MINIO_PUBLIC_URL=https://files.pikidada.com \
-     node:22 sh -c "npm i --no-save @supabase/supabase-js @aws-sdk/client-s3 pg >/dev/null && npx -y tsx scripts/migrate-storage.ts"
-   docker network connect pikidada_default oneoff && docker start -a oneoff; docker rm oneoff
+     -e UPLOAD_DIR=/uploads -e UPLOADS_PUBLIC_URL=https://files.pikidada.com \
+     node:22 sh -c "npm i --no-save @supabase/supabase-js pg >/dev/null && npx -y tsx scripts/migrate-storage.ts"
    ```
 3. **Replay the stored GPS pings into the maps platform** so it learns from every trip since
    launch. `REPLAY_BEFORE` is the time noted in step 1; pings after it were sent live. Run it
@@ -205,7 +202,7 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
   Before deleting, confirm no file links still point at it (expect 0):
   `docker exec postgres psql -U pikidada -d pikidada -c "SELECT count(*) FROM \"Document\" WHERE \"fileUrl\" LIKE '%supabase.co%'"`
 - Close the Cloudinary account: nothing in the database links to it (checked 6 Oct 2026; all
-  documents were on Supabase Storage, which step 2 of the cutover moves to MinIO).
+  documents were on Supabase Storage, which step 2 of the cutover moves to the server).
 - Remove `*.supabase.co` and `res.cloudinary.com` from the image sources in the Caddyfile's
   Content-Security-Policy.
 
@@ -215,9 +212,9 @@ After this, the app no longer depends on Supabase, Render, Vercel or Cloudinary.
 - **Logs and status:** `docker compose -p pikidada logs -f --tail 100` and
   `docker compose -p pikidada ps` (from `/srv/apps/pikidada`) are the new Render dashboard.
 - **Backups** are the box's nightly job: Piki Dada's two databases, its uploaded files (the
-  `pikidada_minio_data` volume) and its settings files, in `/srv/backups/pikidada/` and on the
+  `pikidada_uploads` volume) and its settings files, in `/srv/backups/pikidada/` and on the
   Storage Box. Restoring is in the box README.
-- **Memory:** Piki Dada's containers are allowed about 2.4 GB in total, 1.5 GB of it for
+- **Memory:** Piki Dada's containers are allowed about 2.15 GB in total, 1.5 GB of it for
   OSRM, within the server's budget in the box README. After a week of real traffic, compare
   with `docker stats --no-stream`.
 - **Is the maps platform learning?**

@@ -66,8 +66,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PIKIDADA_DB_PASSWORD: ci
-      MINIO_ROOT_USER: ci
-      MINIO_ROOT_PASSWORD: ci-password
       MAPS_PLATFORM_TOKEN: ci
       NEXT_PUBLIC_API_URL: https://api.pikidada.com
     steps:

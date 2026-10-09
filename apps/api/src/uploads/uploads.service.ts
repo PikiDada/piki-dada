@@ -4,55 +4,70 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { randomBytes } from 'crypto';
+import { mkdir, writeFile } from 'fs/promises';
+import { dirname, resolve, sep } from 'path';
 import axios from 'axios';
 
 // Where uploaded files (driver documents, delivery photos) are stored:
-// - MinIO when MINIO_ENDPOINT is set (the self-hosted server);
-// - otherwise Supabase Storage, which the hosted deployment used before the move and still
-//   uses until cutover.
+// - the server's disk when UPLOAD_DIR is set (the shared Hetzner server: a Docker volume that
+//   Piki Dada's own Caddy serves as files.pikidada.com, backed up nightly with the rest);
+// - otherwise Supabase Storage, which the hosted deployment uses until the move.
 // Missing storage settings must never stop the API from starting: that took every deploy
-// down while the hosted environment had no MinIO. An upload attempted with no storage
-// configured fails on its own instead.
+// down once. An upload attempted with no storage configured fails on its own instead.
 
 interface StorageBackend {
   put(key: string, body: Buffer, contentType: string): Promise<string>;
 }
 
-class MinioBackend implements StorageBackend {
-  private readonly s3: S3Client;
-  private readonly bucket: string;
-  private readonly publicBaseUrl: string;
+// The extension decides the Content-Type the file is later served with, so it comes from the
+// type the upload was accepted as, never from the uploader's file name: a file that claimed to
+// be an image is then always served as one, and nothing uploaded can be served as a web page.
+const EXTENSIONS: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  'application/pdf': '.pdf',
+};
 
-  constructor(config: ConfigService, endpoint: string) {
-    this.bucket = config.getOrThrow<string>('MINIO_BUCKET');
-    // Browsers hit MinIO at a different URL than the API does when the API talks to it
-    // over a private/Docker network address; falls back to the API's own endpoint for
-    // single-host setups where both are the same.
-    this.publicBaseUrl = (
-      config.get<string>('MINIO_PUBLIC_URL') ?? endpoint
-    ).replace(/\/+$/, '');
-    this.s3 = new S3Client({
-      endpoint,
-      region: 'us-east-1',
-      forcePathStyle: true,
-      credentials: {
-        accessKeyId: config.getOrThrow<string>('MINIO_ACCESS_KEY'),
-        secretAccessKey: config.getOrThrow<string>('MINIO_SECRET_KEY'),
-      },
-    });
+// "folder/<cleaned name>-<time>-<random>.<ext>". The uploader's file name only contributes
+// letters, digits, - and _, so it can't reach outside the folder ("../") or break a URL.
+export function storageKey(
+  folder: string,
+  originalName: string | undefined,
+  mimeType: string,
+): string {
+  const base =
+    (originalName ?? '')
+      .replace(/\.[^.]*$/, '')
+      .replace(/[^A-Za-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'file';
+  const random = randomBytes(6).toString('hex');
+  return `${folder}/${base}-${Date.now()}-${random}${EXTENSIONS[mimeType] ?? '.bin'}`;
+}
+
+class DiskBackend implements StorageBackend {
+  private readonly root: string;
+
+  constructor(
+    root: string,
+    private readonly publicBaseUrl: string,
+  ) {
+    this.root = resolve(root);
   }
 
-  async put(key: string, body: Buffer, contentType: string) {
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: contentType,
-      }),
-    );
-    return `${this.publicBaseUrl}/${this.bucket}/${key}`;
+  async put(key: string, body: Buffer) {
+    const path = resolve(this.root, key);
+    // storageKey already prevents this; a second check costs nothing.
+    if (!path.startsWith(this.root + sep)) {
+      throw new Error(`Refusing to write outside the upload folder: ${key}`);
+    }
+    await mkdir(dirname(path), { recursive: true });
+    // "wx": never overwrite an existing file.
+    await writeFile(path, body, { flag: 'wx' });
+    return `${this.publicBaseUrl}/${key}`;
   }
 }
 
@@ -88,18 +103,21 @@ export class UploadsService {
   private readonly backend: StorageBackend | null;
 
   constructor(config: ConfigService) {
-    const minioEndpoint = config.get<string>('MINIO_ENDPOINT');
+    const uploadDir = config.get<string>('UPLOAD_DIR');
+    const publicUrl = config
+      .get<string>('UPLOADS_PUBLIC_URL')
+      ?.replace(/\/+$/, '');
     const supabaseUrl = config.get<string>('SUPABASE_URL')?.replace(/\/+$/, '');
     const supabaseKey = config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (minioEndpoint) {
-      this.backend = new MinioBackend(config, minioEndpoint);
+    if (uploadDir && publicUrl) {
+      this.backend = new DiskBackend(uploadDir, publicUrl);
     } else if (supabaseUrl && supabaseKey) {
       this.backend = new SupabaseBackend(supabaseUrl, supabaseKey);
     } else {
       this.backend = null;
       this.logger.warn(
-        'No file storage configured (MINIO_* or SUPABASE_*); uploads will fail until it is',
+        'No file storage configured (UPLOAD_DIR + UPLOADS_PUBLIC_URL, or SUPABASE_*); uploads will fail until it is',
       );
     }
   }
@@ -115,16 +133,11 @@ export class UploadsService {
         'File uploads are not available right now',
       );
     }
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 9);
-    const uniqueFilename = filename
-      ? `${filename}-${timestamp}-${randomSuffix}`
-      : `file-${timestamp}-${randomSuffix}`;
-    const key = `${folder}/${uniqueFilename}`;
+    const contentType = mimeType || 'application/octet-stream';
     return this.backend.put(
-      key,
+      storageKey(folder, filename, contentType),
       buffer,
-      mimeType || 'application/octet-stream',
+      contentType,
     );
   }
 }
