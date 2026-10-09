@@ -103,9 +103,10 @@ door with HTTPS, Postgres, backups, deploy scripts) live in the box repo,
    access, create SMTP credentials, fill in `SMTP_*` in `apps/api/.env`. See that file's
    comments for the full rundown.
 6. **OSRM (self-hosted routing):** run the one-time data-prep commands in
-   `docker-compose.yml`'s comment on the `osrm` service, from `/srv/apps/pikidada`. Not needed
-   for the move itself: pricing uses Google Routes first anyway, so this can wait until the
-   site is stable.
+   `docker-compose.yml`'s comment on the `osrm` service, from `/srv/apps/pikidada`, then set
+   `COMPOSE_PROFILES="routing"` in `.env` and deploy again. Not needed for the move itself:
+   OSRM stays off until then, and pricing uses Google Routes first anyway, so this can wait
+   until the site is stable.
 
 ## Phase 1 — Dry run (still no impact on the live site)
 

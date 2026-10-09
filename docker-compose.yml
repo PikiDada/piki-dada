@@ -65,12 +65,12 @@ services:
   #
   #   docker volume create pikidada_osrm_data
   #   curl -L -o uganda-latest.osm.pbf https://download.geofabrik.de/africa/uganda-latest.osm.pbf
-  #   docker run -t -v "$(pwd):/data" -v pikidada_osrm_data:/output osrm/osrm-backend \
+  #   docker run -t -v "$(pwd):/data" -v pikidada_osrm_data:/output ghcr.io/project-osrm/osrm-backend:v26.10.0-debian \
   #     osrm-extract -p /opt/car.lua /data/uganda-latest.osm.pbf
   #   mv uganda-latest.osrm* /var/lib/docker/volumes/pikidada_osrm_data/_data/ 2>/dev/null || true
-  #   docker run -t -v pikidada_osrm_data:/data osrm/osrm-backend \
+  #   docker run -t -v pikidada_osrm_data:/data ghcr.io/project-osrm/osrm-backend:v26.10.0-debian \
   #     osrm-partition /data/uganda-latest.osrm
-  #   docker run -t -v pikidada_osrm_data:/data osrm/osrm-backend \
+  #   docker run -t -v pikidada_osrm_data:/data ghcr.io/project-osrm/osrm-backend:v26.10.0-debian \
   #     osrm-customize /data/uganda-latest.osrm
   #
   # (osrm-extract's exact output-path handling varies by image version -- check what lands
@@ -78,8 +78,16 @@ services:
   # directly to the same volume osrm-routed will read from, skipping the copy entirely.)
   # The car profile is intentional, not a placeholder: OSRM ships no motorcycle profile, and
   # the speeds learned from real boda trips correct it where it matters.
+  #
+  # Off until that data exists: without it osrm-routed exits, restarts forever, and every
+  # deploy (which waits for all services to be healthy) would report failure. Once the data
+  # is prepared, add COMPOSE_PROFILES="routing" to .env and deploy again.
+  #
+  # The image is the project's own, on GitHub's registry (the Docker Hub copy is no longer
+  # updated), pinned so a new release can't change routing under us.
   osrm:
-    image: osrm/osrm-backend
+    image: ghcr.io/project-osrm/osrm-backend:v26.10.0-debian
+    profiles: ["routing"]
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/run.sh"]
     mem_limit: 1536m
