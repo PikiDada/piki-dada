@@ -1,68 +1,10 @@
+# Piki Dada on the shared server (github.com/arihosolomon/hetzner-box): the front door
+# (HTTPS) and Postgres are shared and live there, not here. This file is everything that is
+# Piki Dada's own. Deployed with `bin/deploy.sh pikidada` from the box repo, which runs
+# `docker compose -p pikidada up -d --build --wait`. See deploy/README.md.
+name: pikidada
+
 services:
-  postgres:
-    # Same major version as the Supabase database it is restored from (17.6 on 8 Oct 2026):
-    # a dump from a newer Postgres doesn't reliably restore into an older one.
-    image: postgres:17-alpine
-    restart: unless-stopped
-    # Sized for a small server shared with the rest of the stack. Holds two databases: the
-    # app's (POSTGRES_DB) and the maps platform's own (`maps`, created by that service).
-    command: >
-      postgres
-      -c shared_buffers=128MB
-      -c effective_cache_size=512MB
-      -c work_mem=4MB
-      -c maintenance_work_mem=64MB
-      -c max_connections=40
-    mem_limit: 512m
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-pikidada}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    mem_limit: 256m
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # One-shot: creates the driver-documents bucket and makes it anonymously readable, since
-  # uploads.service.ts hands back plain (unsigned) URLs that the admin UI loads directly as
-  # <img src>. Runs once per `docker compose up` and exits; safe to re-run (mc mb -p / repeat
-  # anonymous-set are both idempotent).
-  minio-init:
-    image: minio/mc:latest
-    restart: "no"
-    depends_on:
-      minio:
-        condition: service_healthy
-    # The $ variables below are read inside the container, so they must be passed in here.
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
-      mc mb -p local/${MINIO_BUCKET:-driver-documents} &&
-      mc anonymous set download local/${MINIO_BUCKET:-driver-documents}
-      "
-
   # No self-hosted mail container here -- email goes through Amazon SES (see
   # apps/api/.env.example's SMTP_* section). SES is reached over the public internet
   # regardless of where this stack runs, so it needs no service in this compose file and no
@@ -82,16 +24,16 @@ services:
   # fresher map data later) data-preparation step BEFORE it can serve anything -- osrm-routed
   # refuses to start without a pre-processed .osrm dataset, and producing one from a raw OSM
   # extract takes real time/disk/CPU, so it's deliberately not automated into a `depends_on`
-  # init container the way minio-init is. Run once on the server, from this repo's root:
+  # init container. Run once on the server, from this repo's root:
   #
   #   docker volume create pikidada_osrm_data
   #   curl -L -o uganda-latest.osm.pbf https://download.geofabrik.de/africa/uganda-latest.osm.pbf
-  #   docker run -t -v "$(pwd):/data" -v pikidada_osrm_data:/output osrm/osrm-backend \
+  #   docker run -t -v "$(pwd):/data" -v pikidada_osrm_data:/output ghcr.io/project-osrm/osrm-backend:v26.10.0-debian \
   #     osrm-extract -p /opt/car.lua /data/uganda-latest.osm.pbf
   #   mv uganda-latest.osrm* /var/lib/docker/volumes/pikidada_osrm_data/_data/ 2>/dev/null || true
-  #   docker run -t -v pikidada_osrm_data:/data osrm/osrm-backend \
+  #   docker run -t -v pikidada_osrm_data:/data ghcr.io/project-osrm/osrm-backend:v26.10.0-debian \
   #     osrm-partition /data/uganda-latest.osrm
-  #   docker run -t -v pikidada_osrm_data:/data osrm/osrm-backend \
+  #   docker run -t -v pikidada_osrm_data:/data ghcr.io/project-osrm/osrm-backend:v26.10.0-debian \
   #     osrm-customize /data/uganda-latest.osrm
   #
   # (osrm-extract's exact output-path handling varies by image version -- check what lands
@@ -99,8 +41,16 @@ services:
   # directly to the same volume osrm-routed will read from, skipping the copy entirely.)
   # The car profile is intentional, not a placeholder: OSRM ships no motorcycle profile, and
   # the speeds learned from real boda trips correct it where it matters.
+  #
+  # Off until that data exists: without it osrm-routed exits, restarts forever, and every
+  # deploy (which waits for all services to be healthy) would report failure. Once the data
+  # is prepared, add COMPOSE_PROFILES="routing" to .env and deploy again.
+  #
+  # The image is the project's own, on GitHub's registry (the Docker Hub copy is no longer
+  # updated), pinned so a new release can't change routing under us.
   osrm:
-    image: osrm/osrm-backend
+    image: ghcr.io/project-osrm/osrm-backend:v26.10.0-debian
+    profiles: ["routing"]
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/run.sh"]
     mem_limit: 1536m
@@ -118,19 +68,20 @@ services:
       context: services/maps
     restart: unless-stopped
     mem_limit: 128m
+    # Its database (pikidada_maps) and the login are created by the box's bin/add-app.sh.
     environment:
       PGHOST: postgres
-      PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: maps
+      PGUSER: pikidada
+      PGPASSWORD: ${PIKIDADA_DB_PASSWORD:?set PIKIDADA_DB_PASSWORD in .env}
+      PGDATABASE: pikidada_maps
       PGSSLMODE: disable
       OSRM_URL: http://osrm:5000
       API_TOKEN: ${MAPS_PLATFORM_TOKEN:?set MAPS_PLATFORM_TOKEN in .env}
     volumes:
       - osrm_traffic:/traffic
-    depends_on:
-      postgres:
-        condition: service_healthy
+    networks:
+      - default
+      - db
     healthcheck:
       test: ["CMD", "/mapsd", "healthcheck"]
       interval: 15s
@@ -153,11 +104,15 @@ services:
       # Caps the JS heap below the container limit, so Node collects garbage instead of
       # growing until the container is killed.
       NODE_OPTIONS: --max-old-space-size=256
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      # Uploaded files (rider documents, delivery photos) are written here and served by the
+      # web service as files.pikidada.com (UPLOADS_PUBLIC_URL in apps/api/.env).
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    # DATABASE_URL in apps/api/.env points at postgres:5432 on the shared `db` network.
+    networks:
+      - default
+      - db
     healthcheck:
       # node:22-slim has no wget/curl; Node's built-in fetch does the same check.
       test: ["CMD", "node", "-e", "fetch('http://localhost:4001/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
@@ -165,9 +120,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Serves the website too: apps/web/Dockerfile builds the site as plain files into this
-  # Caddy image, so there's no separate web container or Node process for it.
-  caddy:
+  # The one service facing the internet (the box's front door sends every Piki Dada domain
+  # here, over the `edge` network, as plain HTTP). Its Caddyfile serves the website, built as
+  # plain files into this image (apps/web/Dockerfile), serves uploaded files as files., and
+  # routes api. to the API.
+  web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -180,25 +137,38 @@ services:
         NEXT_PUBLIC_MAP_GLYPHS_URL: ${NEXT_PUBLIC_MAP_GLYPHS_URL:-}
         NEXT_PUBLIC_MAP_SPRITE_URL: ${NEXT_PUBLIC_MAP_SPRITE_URL:-}
     restart: unless-stopped
-    mem_limit: 128m
-    ports:
-      - "80:80"
-      - "443:443"
+    mem_limit: 64m
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Map tiles (.pmtiles) for our own map display, served at /tiles/*; see the Caddyfile
       # and deploy/README.md. Empty unless you've put a file there.
       - ./data/tiles:/srv/tiles:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      # Uploaded files, for files.pikidada.com. Outside /srv on purpose: under it they would
+      # also be reachable through the website.
+      - uploads:/uploads:ro
+    networks:
+      default:
+      edge:
+        aliases:
+          - pikidada
     depends_on:
       - api
-      - minio
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  postgres_data:
-  minio_data:
+  # Can't be rebuilt: backed up nightly by the shared server (VOLUMES in its apps/pikidada.conf).
+  uploads:
   osrm_data:
   osrm_traffic:
-  caddy_data:
-  caddy_config:
+
+networks:
+  default:
+  # Shared, created by the box's bin/setup-server.sh.
+  edge:
+    external: true
+  db:
+    external: true

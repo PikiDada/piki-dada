@@ -65,15 +65,12 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     env:
-      POSTGRES_USER: ci
-      POSTGRES_PASSWORD: ci
-      MINIO_ROOT_USER: ci
-      MINIO_ROOT_PASSWORD: ci-password
+      PIKIDADA_DB_PASSWORD: ci
       MAPS_PLATFORM_TOKEN: ci
       NEXT_PUBLIC_API_URL: https://api.pikidada.com
     steps:
       - uses: actions/checkout@v7
       - run: touch apps/api/.env
       - run: docker compose config --quiet
-      - run: docker compose build api maps caddy
+      - run: docker compose build api maps web
       - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

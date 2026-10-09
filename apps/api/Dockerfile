@@ -1,4 +1,6 @@
 FROM node:22-slim AS base
+# Prisma's query engine needs OpenSSL, which the slim image leaves out.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app
 
